@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: granatracker
+      POSTGRES_PASSWORD: granatracker
+      POSTGRES_DB: granatracker
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    env_file: ./backend/.env
+
+  web:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    env_file: ./frontend/.env.local
+
+volumes:
+  pgdata:

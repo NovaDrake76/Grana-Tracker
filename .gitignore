@@ -1,0 +1,17 @@
+node_modules/
+.env
+.env.local
+backend/db/sqlc/
+*.exe
+*.dll
+*.so
+*.dylib
+.DS_Store
+.next/
+out/
+dist/
+tmp/
+*.log
+package-lock.json
+claude_code_dev_instructions.md
+progress.md

@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS price_history;
+DROP TABLE IF EXISTS price_cache;
+DROP TABLE IF EXISTS investments;
+DROP TABLE IF EXISTS portfolios;
+DROP TABLE IF EXISTS users;
