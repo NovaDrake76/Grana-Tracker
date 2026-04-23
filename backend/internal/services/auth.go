@@ -27,6 +27,7 @@ func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
+// builds a short-lived access token (15 min) and a long-lived refresh token (7 days), both HS256.
 func GenerateTokenPair(userID uuid.UUID, secret string) (*TokenPair, error) {
 	accessClaims := Claims{
 		UserID: userID.String(),
@@ -60,6 +61,7 @@ func GenerateTokenPair(userID uuid.UUID, secret string) (*TokenPair, error) {
 	}, nil
 }
 
+// parses the token, verifies the HS256 signature against our secret, and returns the claims.
 func ValidateToken(tokenStr, secret string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(secret), nil

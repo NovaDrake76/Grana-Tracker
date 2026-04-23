@@ -32,6 +32,7 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// validates the request, hashes the password, inserts the user, and returns a token pair.
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -82,6 +83,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// checks email + password and returns a fresh token pair on success.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -121,6 +123,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// exchanges a valid refresh token for a new access/refresh pair.
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	var req refreshRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

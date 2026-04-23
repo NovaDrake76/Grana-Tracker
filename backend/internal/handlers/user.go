@@ -33,6 +33,7 @@ type updateUserRequest struct {
 	PreferredCurrency *string `json:"preferred_currency"`
 }
 
+// returns the profile of the user identified by the JWT.
 func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	uid, err := parseUUID(userID)
@@ -65,6 +66,7 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// patches name and/or preferred_currency on the authenticated user.
 func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	uid, err := parseUUID(userID)

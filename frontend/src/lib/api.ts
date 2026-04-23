@@ -1,5 +1,7 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
+// fetch wrapper that attaches the access token, and on 401 tries once to refresh
+// and retry; if that fails it clears tokens and sends the user back to /login.
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -49,6 +51,7 @@ async function request<T>(
   return res.json();
 }
 
+// swaps the stored refresh token for a new access/refresh pair; returns false if it can't.
 async function tryRefreshToken(): Promise<boolean> {
   const refreshToken = localStorage.getItem("refresh_token");
   if (!refreshToken) return false;

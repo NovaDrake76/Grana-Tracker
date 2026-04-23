@@ -21,6 +21,7 @@ func writeError(w http.ResponseWriter, status int, message, code string) {
 	})
 }
 
+// detects postgres unique-violation errors so we can return 409 instead of 500.
 func isDuplicateKeyError(err error) bool {
 	return strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "23505")
 }

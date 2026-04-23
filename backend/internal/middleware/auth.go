@@ -20,6 +20,7 @@ func NewAuthMiddleware(secret string) *AuthMiddleware {
 	return &AuthMiddleware{Secret: secret}
 }
 
+// validates the Bearer JWT and stores user_id in the request context; 401 otherwise.
 func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenStr := extractBearerToken(r.Header.Get("Authorization"))

@@ -119,6 +119,7 @@ func main() {
 	log.Println("server stopped")
 }
 
+// reads the init SQL and executes it; treats "already applied" as a no-op.
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) {
 	migrationSQL, err := os.ReadFile("db/migrations/001_init.up.sql")
 	if err != nil {

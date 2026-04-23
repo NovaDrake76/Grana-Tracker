@@ -42,6 +42,7 @@ type updatePortfolioRequest struct {
 	Description *string `json:"description"`
 }
 
+// returns every portfolio owned by the caller, newest first.
 func (h *PortfolioHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	uid, err := parseUUID(userID)
@@ -80,6 +81,7 @@ func (h *PortfolioHandler) List(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// creates a portfolio for the caller; type must be "real" or "simulated".
 func (h *PortfolioHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	uid, err := parseUUID(userID)
@@ -124,6 +126,7 @@ func (h *PortfolioHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// fetches a single portfolio, returning 403 if it doesn't belong to the caller.
 func (h *PortfolioHandler) Get(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	portfolioID := chi.URLParam(r, "id")
@@ -160,6 +163,7 @@ func (h *PortfolioHandler) Get(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// patches any subset of name/type/description after checking ownership.
 func (h *PortfolioHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	portfolioID := chi.URLParam(r, "id")
@@ -233,6 +237,7 @@ func (h *PortfolioHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// deletes a portfolio (and cascades to its investments) after checking ownership.
 func (h *PortfolioHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	portfolioID := chi.URLParam(r, "id")

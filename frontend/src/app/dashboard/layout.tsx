@@ -22,6 +22,7 @@ const navItems = [
   { label: "Settings", href: "/dashboard/settings" },
 ];
 
+// wraps every /dashboard/* page with the sidebar and redirects to /login if not authed.
 export default function DashboardLayout({
   children,
 }: {
