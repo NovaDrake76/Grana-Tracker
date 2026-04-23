@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    name: backend build + tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: grana
+          POSTGRES_PASSWORD: grana
+          POSTGRES_DB: grana_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U grana -d grana_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgres://grana:grana@localhost:5432/grana_test?sslmode=disable
+      JWT_SECRET: test-secret-do-not-use-in-prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: backend/go.sum
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -race -count=1
