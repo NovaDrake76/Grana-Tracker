@@ -69,6 +69,58 @@ npm run frontend   # next dev
 
 The first time the API starts it runs the migration in `backend/db/migrations/001_init.up.sql`, so you don't need to do anything manually.
 
+## Tests
+
+The backend has two layers of tests:
+
+- **Unit tests** (no DB): `internal/services`, `internal/middleware`, and handler helpers. Always run.
+- **Integration tests** (real Postgres): `internal/handlers` — hit the real HTTP + SQL stack. Run only when `TEST_DATABASE_URL` is set; skip cleanly otherwise.
+
+### Run only the unit tests
+
+```
+cd backend
+go test ./...
+```
+
+Integration tests will print `SKIP: TEST_DATABASE_URL not set` — that's expected.
+
+### Run everything (unit + integration)
+
+First start a Postgres the tests can use. The simplest option is to reuse the dev one:
+
+```
+npm run db
+```
+
+Then point the tests at it and run:
+
+```
+cd backend
+export TEST_DATABASE_URL="postgresql://granatracker:granatracker@localhost:5432/granatracker?sslmode=disable"
+go test ./...
+```
+
+On Windows PowerShell:
+
+```
+$env:TEST_DATABASE_URL="postgresql://granatracker:granatracker@localhost:5432/granatracker?sslmode=disable"
+go test ./...
+```
+
+The integration tests `TRUNCATE` every table between runs, so they will wipe your local dev data. If you want to keep it, spin up a second database (e.g. `createdb granatracker_test`) and point `TEST_DATABASE_URL` at that instead.
+
+### Coverage
+
+```
+cd backend
+go test ./... -cover
+```
+
+### CI
+
+Every push and pull request runs `go build`, `go vet`, and `go test ./... -race -count=1` against a fresh Postgres 16 service container. Workflow file: `.github/workflows/ci.yml`.
+
 ## Project layout
 
 ```
@@ -85,6 +137,6 @@ docker-compose.yml
 
 ## Current state
 
-Working: registration, login, JWT refresh, user profile, portfolio CRUD.
+Working: registration, login, JWT refresh, user profile, portfolio CRUD, `/healthz` and `/readyz` probes, automated tests (unit + integration), GitHub Actions CI.
 
-Still to do: investment CRUD, dashboard summary, live price fetching, charts.
+Still to do: investment CRUD, dashboard summary, live price fetching, charts, sqlc migration, Clean Architecture layering, OpenAPI docs.
