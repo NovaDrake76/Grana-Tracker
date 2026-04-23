@@ -10,14 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
-	"github.com/NovaDrake76/grana-tracker/backend/internal/handlers"
-	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
+	"github.com/NovaDrake76/grana-tracker/backend/internal/db"
+	"github.com/NovaDrake76/grana-tracker/backend/internal/server"
 )
 
 func main() {
@@ -50,53 +47,13 @@ func main() {
 	}
 	log.Println("connected to database")
 
-	runMigrations(ctx, pool)
-
-	authMiddleware := middleware.NewAuthMiddleware(jwtSecret)
-	authHandler := handlers.NewAuthHandler(pool, jwtSecret)
-	userHandler := handlers.NewUserHandler(pool)
-	portfolioHandler := handlers.NewPortfolioHandler(pool)
-
-	r := chi.NewRouter()
-	r.Use(chimw.Logger)
-	r.Use(chimw.Recoverer)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{frontendURL},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
-		AllowCredentials: true,
-	}))
-
-	r.Route("/api", func(r chi.Router) {
-		// public routes
-		r.Route("/auth", func(r chi.Router) {
-			r.Post("/register", authHandler.Register)
-			r.Post("/login", authHandler.Login)
-			r.Post("/refresh", authHandler.Refresh)
-		})
-
-		// protected routes
-		r.Group(func(r chi.Router) {
-			r.Use(authMiddleware.Authenticate)
-
-			r.Route("/user", func(r chi.Router) {
-				r.Get("/me", userHandler.GetMe)
-				r.Put("/me", userHandler.UpdateMe)
-			})
-
-			r.Route("/portfolios", func(r chi.Router) {
-				r.Get("/", portfolioHandler.List)
-				r.Post("/", portfolioHandler.Create)
-				r.Get("/{id}", portfolioHandler.Get)
-				r.Put("/{id}", portfolioHandler.Update)
-				r.Delete("/{id}", portfolioHandler.Delete)
-			})
-		})
-	})
+	if err := db.RunMigrations(ctx, pool, "db/migrations"); err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
+	}
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", port),
-		Handler: r,
+		Handler: server.NewRouter(pool, jwtSecret, frontendURL),
 	}
 
 	go func() {
@@ -117,21 +74,4 @@ func main() {
 		log.Fatalf("server forced to shutdown: %v", err)
 	}
 	log.Println("server stopped")
-}
-
-// reads the init SQL and executes it; treats "already applied" as a no-op.
-func runMigrations(ctx context.Context, pool *pgxpool.Pool) {
-	migrationSQL, err := os.ReadFile("db/migrations/001_init.up.sql")
-	if err != nil {
-		log.Printf("no migration file found, skipping: %v", err)
-		return
-	}
-
-	_, err = pool.Exec(ctx, string(migrationSQL))
-	if err != nil {
-		// tables likely already exist
-		log.Printf("migration note: %v", err)
-		return
-	}
-	log.Println("migrations applied successfully")
 }
