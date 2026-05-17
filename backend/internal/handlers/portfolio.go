@@ -2,22 +2,23 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
 
+	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
 )
 
 type PortfolioHandler struct {
-	DB *pgxpool.Pool
+	Queries *sqlc.Queries
 }
 
-func NewPortfolioHandler(db *pgxpool.Pool) *PortfolioHandler {
-	return &PortfolioHandler{DB: db}
+func NewPortfolioHandler(queries *sqlc.Queries) *PortfolioHandler {
+	return &PortfolioHandler{Queries: queries}
 }
 
 type portfolioResponse struct {
@@ -28,6 +29,12 @@ type portfolioResponse struct {
 	Description *string `json:"description"`
 	CreatedAt   string  `json:"created_at"`
 	UpdatedAt   string  `json:"updated_at"`
+}
+
+// portfolioWithInvestmentsResponse is the nested 1:N payload returned by Get.
+type portfolioWithInvestmentsResponse struct {
+	portfolioResponse
+	Investments []investmentResponse `json:"investments"`
 }
 
 type createPortfolioRequest struct {
@@ -42,6 +49,18 @@ type updatePortfolioRequest struct {
 	Description *string `json:"description"`
 }
 
+func toPortfolioResponse(p sqlc.Portfolio) portfolioResponse {
+	return portfolioResponse{
+		ID:          uuidStr(p.ID),
+		UserID:      uuidStr(p.UserID),
+		Name:        p.Name,
+		Type:        p.Type,
+		Description: textPtr(p.Description),
+		CreatedAt:   tsString(p.CreatedAt),
+		UpdatedAt:   tsString(p.UpdatedAt),
+	}
+}
+
 // returns every portfolio owned by the caller, newest first.
 func (h *PortfolioHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
@@ -51,29 +70,15 @@ func (h *PortfolioHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.DB.Query(r.Context(),
-		"SELECT id, user_id, name, type, description, created_at, updated_at FROM portfolios WHERE user_id = $1 ORDER BY created_at DESC",
-		uid,
-	)
+	rows, err := h.Queries.ListPortfoliosByUser(r.Context(), pgUUID(uid))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list portfolios", "INTERNAL_ERROR")
 		return
 	}
-	defer rows.Close()
 
-	portfolios := []portfolioResponse{}
-	for rows.Next() {
-		var p portfolioResponse
-		var desc *string
-		var createdAt, updatedAt time.Time
-		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Type, &desc, &createdAt, &updatedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to scan portfolio", "INTERNAL_ERROR")
-			return
-		}
-		p.Description = desc
-		p.CreatedAt = createdAt.Format(time.RFC3339)
-		p.UpdatedAt = updatedAt.Format(time.RFC3339)
-		portfolios = append(portfolios, p)
+	portfolios := make([]portfolioResponse, 0, len(rows))
+	for _, p := range rows {
+		portfolios = append(portfolios, toPortfolioResponse(p))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -105,28 +110,25 @@ func (h *PortfolioHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var p portfolioResponse
-	var desc *string
-	var createdAt, updatedAt time.Time
-	err = h.DB.QueryRow(r.Context(),
-		"INSERT INTO portfolios (user_id, name, type, description) VALUES ($1, $2, $3, $4) RETURNING id, user_id, name, type, description, created_at, updated_at",
-		uid, req.Name, req.Type, req.Description,
-	).Scan(&p.ID, &p.UserID, &p.Name, &p.Type, &desc, &createdAt, &updatedAt)
+	created, err := h.Queries.CreatePortfolio(r.Context(), sqlc.CreatePortfolioParams{
+		UserID:      pgUUID(uid),
+		Name:        req.Name,
+		Type:        req.Type,
+		Description: pgTextPtr(req.Description),
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create portfolio", "INTERNAL_ERROR")
 		return
 	}
-	p.Description = desc
-	p.CreatedAt = createdAt.Format(time.RFC3339)
-	p.UpdatedAt = updatedAt.Format(time.RFC3339)
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"data":    p,
+		"data":    toPortfolioResponse(created),
 		"message": "portfolio created successfully",
 	})
 }
 
-// fetches a single portfolio, returning 403 if it doesn't belong to the caller.
+// fetches a single portfolio with its nested investments (the 1:N payload).
+// returns 403 if it doesn't belong to the caller.
 func (h *PortfolioHandler) Get(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	portfolioID := chi.URLParam(r, "id")
@@ -137,29 +139,37 @@ func (h *PortfolioHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var p portfolioResponse
-	var desc *string
-	var createdAt, updatedAt time.Time
-	err = h.DB.QueryRow(r.Context(),
-		"SELECT id, user_id, name, type, description, created_at, updated_at FROM portfolios WHERE id = $1",
-		pid,
-	).Scan(&p.ID, &p.UserID, &p.Name, &p.Type, &desc, &createdAt, &updatedAt)
+	p, err := h.Queries.GetPortfolioByID(r.Context(), pgUUID(pid))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "portfolio not found", "NOT_FOUND")
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "portfolio not found", "NOT_FOUND")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load portfolio", "INTERNAL_ERROR")
 		return
 	}
 
-	if p.UserID != userID {
+	if uuidStr(p.UserID) != userID {
 		writeError(w, http.StatusForbidden, "access denied", "FORBIDDEN")
 		return
 	}
 
-	p.Description = desc
-	p.CreatedAt = createdAt.Format(time.RFC3339)
-	p.UpdatedAt = updatedAt.Format(time.RFC3339)
+	invs, err := h.Queries.ListInvestmentsByPortfolio(r.Context(), p.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load investments", "INTERNAL_ERROR")
+		return
+	}
+
+	nested := make([]investmentResponse, 0, len(invs))
+	for _, i := range invs {
+		nested = append(nested, toInvestmentResponse(i))
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data": p,
+		"data": portfolioWithInvestmentsResponse{
+			portfolioResponse: toPortfolioResponse(p),
+			Investments:       nested,
+		},
 	})
 }
 
@@ -174,14 +184,16 @@ func (h *PortfolioHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// verify ownership
-	var ownerID string
-	err = h.DB.QueryRow(r.Context(), "SELECT user_id FROM portfolios WHERE id = $1", pid).Scan(&ownerID)
+	current, err := h.Queries.GetPortfolioByID(r.Context(), pgUUID(pid))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "portfolio not found", "NOT_FOUND")
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "portfolio not found", "NOT_FOUND")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load portfolio", "INTERNAL_ERROR")
 		return
 	}
-	if ownerID != userID {
+	if uuidStr(current.UserID) != userID {
 		writeError(w, http.StatusForbidden, "access denied", "FORBIDDEN")
 		return
 	}
@@ -192,16 +204,9 @@ func (h *PortfolioHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// get current values
-	var currentName, currentType string
-	var currentDesc *string
-	h.DB.QueryRow(r.Context(),
-		"SELECT name, type, description FROM portfolios WHERE id = $1", pid,
-	).Scan(&currentName, &currentType, &currentDesc)
-
-	name := currentName
-	pType := currentType
-	desc := currentDesc
+	name := current.Name
+	pType := current.Type
+	desc := current.Description
 	if req.Name != nil {
 		name = *req.Name
 	}
@@ -213,26 +218,22 @@ func (h *PortfolioHandler) Update(w http.ResponseWriter, r *http.Request) {
 		pType = *req.Type
 	}
 	if req.Description != nil {
-		desc = req.Description
+		desc = pgTextPtr(req.Description)
 	}
 
-	var p portfolioResponse
-	var retDesc *string
-	var createdAt, updatedAt time.Time
-	err = h.DB.QueryRow(r.Context(),
-		"UPDATE portfolios SET name = $2, type = $3, description = $4, updated_at = NOW() WHERE id = $1 RETURNING id, user_id, name, type, description, created_at, updated_at",
-		pid, name, pType, desc,
-	).Scan(&p.ID, &p.UserID, &p.Name, &p.Type, &retDesc, &createdAt, &updatedAt)
+	updated, err := h.Queries.UpdatePortfolio(r.Context(), sqlc.UpdatePortfolioParams{
+		ID:          pgUUID(pid),
+		Name:        name,
+		Type:        pType,
+		Description: desc,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update portfolio", "INTERNAL_ERROR")
 		return
 	}
-	p.Description = retDesc
-	p.CreatedAt = createdAt.Format(time.RFC3339)
-	p.UpdatedAt = updatedAt.Format(time.RFC3339)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data":    p,
+		"data":    toPortfolioResponse(updated),
 		"message": "portfolio updated successfully",
 	})
 }
@@ -248,20 +249,21 @@ func (h *PortfolioHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// verify ownership
-	var ownerID string
-	err = h.DB.QueryRow(r.Context(), "SELECT user_id FROM portfolios WHERE id = $1", pid).Scan(&ownerID)
+	current, err := h.Queries.GetPortfolioByID(r.Context(), pgUUID(pid))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "portfolio not found", "NOT_FOUND")
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "portfolio not found", "NOT_FOUND")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load portfolio", "INTERNAL_ERROR")
 		return
 	}
-	if ownerID != userID {
+	if uuidStr(current.UserID) != userID {
 		writeError(w, http.StatusForbidden, "access denied", "FORBIDDEN")
 		return
 	}
 
-	_, err = h.DB.Exec(r.Context(), "DELETE FROM portfolios WHERE id = $1", pid)
-	if err != nil {
+	if err := h.Queries.DeletePortfolio(r.Context(), pgUUID(pid)); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete portfolio", "INTERNAL_ERROR")
 		return
 	}

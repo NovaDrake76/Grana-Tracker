@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/handlers"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
 )
@@ -13,10 +14,13 @@ import (
 // NewRouter wires every route and middleware in one place so main.go and
 // integration tests build the exact same HTTP surface.
 func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
+	queries := sqlc.New(pool)
+
 	authMiddleware := middleware.NewAuthMiddleware(jwtSecret)
-	authHandler := handlers.NewAuthHandler(pool, jwtSecret)
-	userHandler := handlers.NewUserHandler(pool)
-	portfolioHandler := handlers.NewPortfolioHandler(pool)
+	authHandler := handlers.NewAuthHandler(queries, jwtSecret)
+	userHandler := handlers.NewUserHandler(queries)
+	portfolioHandler := handlers.NewPortfolioHandler(queries)
+	investmentHandler := handlers.NewInvestmentHandler(queries)
 	healthHandler := handlers.NewHealthHandler(pool)
 
 	r := chi.NewRouter()
@@ -54,6 +58,13 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
 				r.Get("/{id}", portfolioHandler.Get)
 				r.Put("/{id}", portfolioHandler.Update)
 				r.Delete("/{id}", portfolioHandler.Delete)
+				r.Post("/{id}/investments", investmentHandler.Create)
+			})
+
+			r.Route("/investments", func(r chi.Router) {
+				r.Get("/{id}", investmentHandler.Get)
+				r.Put("/{id}", investmentHandler.Update)
+				r.Delete("/{id}", investmentHandler.Delete)
 			})
 		})
 	})

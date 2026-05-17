@@ -47,7 +47,7 @@ func main() {
 	}
 	log.Println("connected to database")
 
-	if err := db.RunMigrations(ctx, pool, "db/migrations"); err != nil {
+	if err := db.RunMigrations(ctx, pool, "db/schema"); err != nil {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 

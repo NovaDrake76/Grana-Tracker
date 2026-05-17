@@ -127,6 +127,15 @@ export default function PortfoliosPage() {
               <HStack gap="2">
                 <Button
                   size="xs"
+                  colorPalette="blue"
+                  onClick={() =>
+                    router.push(`/dashboard/portfolios/${portfolio.id}`)
+                  }
+                >
+                  View
+                </Button>
+                <Button
+                  size="xs"
                   variant="outline"
                   onClick={() =>
                     router.push(`/dashboard/portfolios/${portfolio.id}/edit`)

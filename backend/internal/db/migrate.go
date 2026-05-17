@@ -10,13 +10,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// RunMigrations reads 001_init.up.sql from migrationsDir and applies it.
+// RunMigrations reads 001_init.up.sql from schemaDir and applies it.
 // Re-running against an already-migrated DB is a no-op (logged, not fatal) —
 // the init SQL is CREATE TABLE without IF NOT EXISTS, so Postgres returns an
 // error the second time and we swallow it. Tests rely on TRUNCATE for
 // between-test isolation rather than re-running DDL.
-func RunMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	path := filepath.Join(migrationsDir, "001_init.up.sql")
+func RunMigrations(ctx context.Context, pool *pgxpool.Pool, schemaDir string) error {
+	path := filepath.Join(schemaDir, "001_init.up.sql")
 	sql, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read migration %s: %w", path, err)

@@ -45,11 +45,11 @@ func TestMain(m *testing.M) {
 		log.Fatalf("connect to test DB: %v", err)
 	}
 
-	migrationsDir := os.Getenv("TEST_MIGRATIONS_DIR")
-	if migrationsDir == "" {
-		migrationsDir = "../../db/migrations"
+	schemaDir := os.Getenv("TEST_SCHEMA_DIR")
+	if schemaDir == "" {
+		schemaDir = "../../db/schema"
 	}
-	if err := db.RunMigrations(ctx, pool, migrationsDir); err != nil {
+	if err := db.RunMigrations(ctx, pool, schemaDir); err != nil {
 		log.SetOutput(os.Stderr)
 		log.Fatalf("run migrations: %v", err)
 	}

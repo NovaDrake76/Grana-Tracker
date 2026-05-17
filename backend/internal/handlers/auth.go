@@ -2,19 +2,22 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/services"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type AuthHandler struct {
-	DB     *pgxpool.Pool
-	Secret string
+	Queries *sqlc.Queries
+	Secret  string
 }
 
-func NewAuthHandler(db *pgxpool.Pool, secret string) *AuthHandler {
-	return &AuthHandler{DB: db, Secret: secret}
+func NewAuthHandler(queries *sqlc.Queries, secret string) *AuthHandler {
+	return &AuthHandler{Queries: queries, Secret: secret}
 }
 
 type registerRequest struct {
@@ -56,11 +59,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userID [16]byte
-	err = h.DB.QueryRow(r.Context(),
-		"INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id",
-		req.Name, req.Email, hash,
-	).Scan(&userID)
+	created, err := h.Queries.CreateUser(r.Context(), sqlc.CreateUserParams{
+		Name:         req.Name,
+		Email:        req.Email,
+		PasswordHash: hash,
+	})
 	if err != nil {
 		if isDuplicateKeyError(err) {
 			writeError(w, http.StatusConflict, "email already registered", "DUPLICATE_ERROR")
@@ -70,8 +73,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uid := uuidFromBytes(userID)
-	tokens, err := services.GenerateTokenPair(uid, h.Secret)
+	tokens, err := services.GenerateTokenPair(uuidFromBytes(created.ID.Bytes), h.Secret)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to generate tokens", "INTERNAL_ERROR")
 		return
@@ -96,23 +98,22 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userID [16]byte
-	var passwordHash string
-	err := h.DB.QueryRow(r.Context(),
-		"SELECT id, password_hash FROM users WHERE email = $1", req.Email,
-	).Scan(&userID, &passwordHash)
+	user, err := h.Queries.GetUserByEmail(r.Context(), req.Email)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusUnauthorized, "invalid email or password", "AUTH_ERROR")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to look up user", "INTERNAL_ERROR")
+		return
+	}
+
+	if !services.CheckPassword(req.Password, user.PasswordHash) {
 		writeError(w, http.StatusUnauthorized, "invalid email or password", "AUTH_ERROR")
 		return
 	}
 
-	if !services.CheckPassword(req.Password, passwordHash) {
-		writeError(w, http.StatusUnauthorized, "invalid email or password", "AUTH_ERROR")
-		return
-	}
-
-	uid := uuidFromBytes(userID)
-	tokens, err := services.GenerateTokenPair(uid, h.Secret)
+	tokens, err := services.GenerateTokenPair(uuidFromBytes(user.ID.Bytes), h.Secret)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to generate tokens", "INTERNAL_ERROR")
 		return
