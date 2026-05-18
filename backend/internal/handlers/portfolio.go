@@ -139,6 +139,7 @@ func (h *PortfolioHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// gets portfolio
 	p, err := h.Queries.GetPortfolioByID(r.Context(), pgUUID(pid))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -149,11 +150,13 @@ func (h *PortfolioHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//checks access
 	if uuidStr(p.UserID) != userID {
 		writeError(w, http.StatusForbidden, "access denied", "FORBIDDEN")
 		return
 	}
 
+	//show investments from that portfolio
 	invs, err := h.Queries.ListInvestmentsByPortfolio(r.Context(), p.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load investments", "INTERNAL_ERROR")

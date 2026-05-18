@@ -8,6 +8,7 @@ import {
   Container,
   FieldLabel,
   FieldRoot,
+  Flex,
   Heading,
   Input,
   Text,
@@ -28,7 +29,7 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/dashboard/portfolios");
+      router.replace("/dashboard");
     }
   }, [isAuthenticated, isLoading, router]);
 
@@ -37,11 +38,11 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(name, email, password);
-      router.push("/dashboard/portfolios");
+      router.push("/dashboard");
     } catch (err) {
       toaster.create({
-        title: "Registration failed",
-        description: err instanceof Error ? err.message : "Something went wrong",
+        title: "Falha no cadastro",
+        description: err instanceof Error ? err.message : "Algo deu errado",
         type: "error",
         duration: 3000,
       });
@@ -53,59 +54,117 @@ export default function RegisterPage() {
   if (isLoading) return null;
 
   return (
-    <Container maxW="md" py="20">
-      <VStack gap="8">
-        <Heading size="xl" color="brand.500">
-          Grana Tracker
-        </Heading>
-        <Box w="100%" bg="gray.800" p="8" borderRadius="lg">
-          <form onSubmit={handleSubmit}>
-            <VStack gap="4">
-              <Heading size="md">Create Account</Heading>
-              <FieldRoot required>
-                <FieldLabel>Name</FieldLabel>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your name"
-                />
-              </FieldRoot>
-              <FieldRoot required>
-                <FieldLabel>Email</FieldLabel>
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                />
-              </FieldRoot>
-              <FieldRoot required>
-                <FieldLabel>Password</FieldLabel>
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 6 characters"
-                />
-              </FieldRoot>
-              <Button
-                type="submit"
-                colorPalette="blue"
-                w="100%"
-                loading={loading}
-              >
-                Register
-              </Button>
-              <Text fontSize="sm">
-                Already have an account?{" "}
-                <ChakraLink asChild color="brand.500">
-                  <NextLink href="/login">Login</NextLink>
-                </ChakraLink>
-              </Text>
-            </VStack>
-          </form>
-        </Box>
-      </VStack>
-    </Container>
+    <Box className="auth-backdrop">
+      <Container maxW="md" py={{ base: "10", md: "20" }} position="relative" zIndex="1">
+        <VStack gap="8">
+          <Flex direction="column" align="center" gap="3">
+            <Flex
+              w="64px"
+              h="64px"
+              align="center"
+              justify="center"
+              borderRadius="2xl"
+              fontSize="3xl"
+              fontWeight="bold"
+              color="gray.900"
+              style={{
+                background: "linear-gradient(135deg, #7dd3fc, #0ea5e9 50%, #0369a1)",
+                boxShadow:
+                  "0 12px 40px -8px rgba(14, 165, 233, 0.6), inset 0 1px 0 0 rgba(255,255,255,0.4)",
+              }}
+            >
+              G
+            </Flex>
+            <Heading
+              size="2xl"
+              className="gradient-text"
+              textAlign="center"
+            >
+              Grana Tracker
+            </Heading>
+            <Text color="gray.400" textAlign="center" fontSize="sm">
+              Crie uma conta gratuita para começar
+            </Text>
+          </Flex>
+
+          <Box w="100%" className="glass-card" p="8" borderRadius="2xl">
+            <form onSubmit={handleSubmit}>
+              <VStack gap="5">
+                <Heading size="md" color="white" alignSelf="start">
+                  Criar conta
+                </Heading>
+                <FieldRoot required>
+                  <FieldLabel>Nome</FieldLabel>
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Seu nome"
+                    bg="rgba(15, 23, 42, 0.5)"
+                    borderColor="rgba(148, 163, 184, 0.2)"
+                    _hover={{ borderColor: "rgba(148, 163, 184, 0.4)" }}
+                    _focus={{ borderColor: "brand.400", boxShadow: "0 0 0 1px var(--brand-500)" }}
+                  />
+                </FieldRoot>
+                <FieldRoot required>
+                  <FieldLabel>Email</FieldLabel>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="seu@email.com"
+                    bg="rgba(15, 23, 42, 0.5)"
+                    borderColor="rgba(148, 163, 184, 0.2)"
+                    _hover={{ borderColor: "rgba(148, 163, 184, 0.4)" }}
+                    _focus={{ borderColor: "brand.400", boxShadow: "0 0 0 1px var(--brand-500)" }}
+                  />
+                </FieldRoot>
+                <FieldRoot required>
+                  <FieldLabel>Senha</FieldLabel>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Mínimo de 6 caracteres"
+                    bg="rgba(15, 23, 42, 0.5)"
+                    borderColor="rgba(148, 163, 184, 0.2)"
+                    _hover={{ borderColor: "rgba(148, 163, 184, 0.4)" }}
+                    _focus={{ borderColor: "brand.400", boxShadow: "0 0 0 1px var(--brand-500)" }}
+                  />
+                </FieldRoot>
+                <Button
+                  type="submit"
+                  colorPalette="blue"
+                  w="100%"
+                  loading={loading}
+                  size="md"
+                  style={{
+                    background: "linear-gradient(135deg, #0ea5e9, #0284c7)",
+                    boxShadow: "0 8px 24px -8px rgba(14, 165, 233, 0.6)",
+                  }}
+                >
+                  Criar conta
+                </Button>
+                <Box
+                  w="100%"
+                  borderTop="1px solid rgba(148, 163, 184, 0.1)"
+                  pt="4"
+                >
+                  <Text fontSize="sm" color="gray.400" textAlign="center">
+                    Já tem uma conta?{" "}
+                    <ChakraLink asChild color="brand.300" fontWeight="medium">
+                      <NextLink href="/login">Entrar</NextLink>
+                    </ChakraLink>
+                  </Text>
+                </Box>
+              </VStack>
+            </form>
+          </Box>
+
+          <Text fontSize="xs" color="gray.600" textAlign="center">
+            DIM0547 · Desenvolvimento de Sistemas Web II com Go · UFRN 2026.1
+          </Text>
+        </VStack>
+      </Container>
+    </Box>
   );
 }

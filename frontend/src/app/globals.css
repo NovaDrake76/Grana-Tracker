@@ -1,5 +1,264 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* note: do NOT zero out * { margin/padding }. Chakra v3 ships its own preflight
+   and relies on default block-margins on headings / lists. Our own zeroing here
+   broke every Chakra spacing prop (gap, p, m, py, etc.). */
+
+:root {
+  --brand-500: #0ea5e9;
+  --brand-400: #38bdf8;
+  --brand-300: #7dd3fc;
+  --brand-glow: rgba(14, 165, 233, 0.4);
+  --purple-400: #a855f7;
+  --purple-glow: rgba(168, 85, 247, 0.4);
+  --gain: #22c55e;
+  --gain-glow: rgba(34, 197, 94, 0.4);
+  --loss: #ef4444;
+  --loss-glow: rgba(239, 68, 68, 0.4);
+
+  --grid-line: rgba(148, 163, 184, 0.06);
+  --glass-bg: rgba(15, 23, 42, 0.55);
+  --glass-border: rgba(148, 163, 184, 0.12);
+}
+
+html,
+body {
+  background: #020617;
+  color-scheme: dark;
+  font-family:
+    "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+}
+
+/* custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.15);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+/* selection */
+::selection {
+  background: rgba(14, 165, 233, 0.3);
+  color: white;
+}
+
+/* animated mesh gradient — slow drift, used as a backdrop for auth/dashboard hero */
+@keyframes meshDrift {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(3%, -2%) scale(1.05);
+  }
+  66% {
+    transform: translate(-2%, 3%) scale(0.95);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* page-level animated backdrop with grid + mesh */
+.app-backdrop {
+  position: relative;
+  background:
+    radial-gradient(ellipse at top left, rgba(14, 165, 233, 0.1), transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(168, 85, 247, 0.08), transparent 50%),
+    linear-gradient(180deg, #020617 0%, #0f172a 100%);
+  background-attachment: fixed;
+}
+
+.app-backdrop::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  z-index: 0;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+/* glass card — semi-transparent + backdrop blur + soft border */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.04) inset,
+    0 20px 60px -20px rgba(0, 0, 0, 0.6);
+}
+
+/* gradient borders via masked pseudo-element */
+.gradient-border {
+  position: relative;
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 12px;
+}
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--brand-500), var(--purple-400));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.gradient-border:hover::before { opacity: 1; }
+
+/* gradient text — used for big hero headings */
+.gradient-text {
+  background: linear-gradient(135deg, #ffffff 0%, #7dd3fc 50%, #a855f7 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.gradient-text-brand {
+  background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* glow utilities */
+.glow-brand {
+  box-shadow: 0 0 40px -8px var(--brand-glow);
+}
+.glow-purple {
+  box-shadow: 0 0 40px -8px var(--purple-glow);
+}
+.glow-gain {
+  box-shadow: 0 0 40px -8px var(--gain-glow);
+}
+
+/* hero card — gradient background, ideal for top of dashboard / portfolio detail */
+.hero-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse at top left, rgba(14, 165, 233, 0.25), transparent 60%),
+    radial-gradient(ellipse at bottom right, rgba(168, 85, 247, 0.2), transparent 60%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.7) 100%);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px);
+}
+
+.hero-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.06) 1px, transparent 0);
+  background-size: 24px 24px;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* moving mesh used inside .auth-backdrop */
+.auth-backdrop {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #020617;
+}
+
+.auth-backdrop::before,
+.auth-backdrop::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.5;
+  animation: meshDrift 18s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.auth-backdrop::before {
+  top: -10%;
+  left: -10%;
+  width: 50%;
+  height: 50%;
+  background: radial-gradient(circle, var(--brand-500), transparent 70%);
+}
+
+.auth-backdrop::after {
+  bottom: -15%;
+  right: -10%;
+  width: 55%;
+  height: 55%;
+  background: radial-gradient(circle, var(--purple-400), transparent 70%);
+  animation-delay: -9s;
+}
+
+/* lift on hover — for cards */
+.lift {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 20px 40px -20px rgba(14, 165, 233, 0.25);
+}
+
+/* card top-strip accent */
+.accent-bar {
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand-500), var(--purple-400));
+  position: relative;
+}
+.accent-bar.real {
+  background: linear-gradient(90deg, var(--brand-500), var(--brand-300));
+}
+.accent-bar.simulated {
+  background: linear-gradient(90deg, var(--purple-400), #c084fc);
+}
+
+/* shimmery sidebar active pill */
+.nav-active {
+  position: relative;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.15), rgba(168, 85, 247, 0.1));
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  box-shadow: 0 0 20px -8px var(--brand-glow);
+}
+
+/* shimmer animation for skeleton-like elements */
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+/* subtle hover scale for interactive icons */
+.icon-pop {
+  transition: transform 0.2s ease;
+}
+.icon-pop:hover {
+  transform: scale(1.1);
+}
+
+/* z-index helpers so backdrop layers don't capture clicks */
+.above-backdrop {
+  position: relative;
+  z-index: 1;
 }

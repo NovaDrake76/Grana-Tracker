@@ -1,4 +1,4 @@
-import { createSystem, defineConfig } from "@chakra-ui/react";
+import { createSystem, defaultConfig, defineConfig } from "@chakra-ui/react";
 
 const config = defineConfig({
   theme: {
@@ -19,8 +19,20 @@ const config = defineConfig({
         gain: { value: "#22c55e" },
         loss: { value: "#ef4444" },
       },
+      fonts: {
+        body: {
+          value:
+            "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        },
+        heading: {
+          value:
+            "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        },
+      },
     },
   },
 });
 
-export const system = createSystem(config);
+// merging with defaultConfig is mandatory: createSystem(config) alone wipes
+// every base token (spacing, radii, fonts) and Chakra components render naked.
+export const system = createSystem(defaultConfig, config);

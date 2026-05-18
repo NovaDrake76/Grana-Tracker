@@ -1,0 +1,431 @@
+{
+  "info": {
+    "name": "Grana Tracker API",
+    "_postman_id": "f7d1e0b2-9b48-4f0b-8c2e-1a2b3c4d5e6f",
+    "description": "Sprint 2 API: auth, user, portfolios, and investments (1:N).\n\n## Como usar\n1. Selecione o environment **Grana Tracker - Local** (ou só use as variáveis da collection)\n2. Rode **Auth > Register** uma vez para criar um usuário (o token cai automaticamente em `{{accessToken}}`)\n3. Rode **Portfolios > Create portfolio** — o id cai em `{{portfolioId}}`\n4. Rode **Investments > Create investment in portfolio** — o id cai em `{{investmentId}}`\n5. Rode **Portfolios > Get portfolio (nested)** — esse é o endpoint 1:N que entrega a sprint\n\nA partir daí qualquer endpoint pode ser executado em qualquer ordem.\n\nSe o access token expirar (15 min), rode **Auth > Refresh token**.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "portfolioId", "value": "", "type": "string" },
+    { "key": "investmentId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness (/healthz)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": ["{{baseUrl}}"],
+              "path": ["healthz"]
+            },
+            "description": "Liveness probe — sempre 200 se o processo está vivo."
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness (/readyz)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readyz",
+              "host": ["{{baseUrl}}"],
+              "path": ["readyz"]
+            },
+            "description": "Readiness probe — 200 se o DB está alcançável, 503 caso contrário."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.collectionVariables.set('accessToken', data.access_token);",
+                  "  pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "  console.log('Tokens salvos. accessToken length =', data.access_token.length);",
+                  "} else {",
+                  "  console.log('Register falhou:', pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Demo User\",\n  \"email\": \"demo@grana.com\",\n  \"password\": \"senha123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Cria um usuário e devolve `access_token` + `refresh_token`. Os dois são salvos automaticamente em variáveis da collection."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.collectionVariables.set('accessToken', data.access_token);",
+                  "  pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "  console.log('Login OK — tokens atualizados');",
+                  "} else {",
+                  "  console.log('Login falhou:', pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"demo@grana.com\",\n  \"password\": \"senha123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Valida email/senha e devolve um novo par de tokens. Salva ambos automaticamente."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.collectionVariables.set('accessToken', data.access_token);",
+                  "  pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "  console.log('Tokens renovados');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Troca um refresh_token válido (7d) por um novo par de tokens. Use quando o access expira (15 min)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User",
+      "item": [
+        {
+          "name": "Get me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "me"]
+            },
+            "description": "Devolve o perfil do usuário autenticado pelo JWT."
+          },
+          "response": []
+        },
+        {
+          "name": "Update me",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Demo Renamed\",\n  \"preferred_currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "me"]
+            },
+            "description": "Atualiza nome e/ou moeda preferida. Ambos os campos são opcionais (passe só o que quiser mudar)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Portfolios",
+      "item": [
+        {
+          "name": "List portfolios",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios"]
+            },
+            "description": "Lista os portfólios do usuário autenticado (sem investimentos aninhados — para isso use o **Get portfolio (nested)**)."
+          },
+          "response": []
+        },
+        {
+          "name": "Create portfolio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.collectionVariables.set('portfolioId', data.id);",
+                  "  console.log('portfolioId salvo:', data.id);",
+                  "} else {",
+                  "  console.log('Create falhou:', pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cripto Longo Prazo\",\n  \"type\": \"simulated\",\n  \"description\": \"Carteira simulada para testar estratégias\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios"]
+            },
+            "description": "Cria um portfólio. `type` deve ser `real` ou `simulated`. O id retornado é salvo automaticamente em `{{portfolioId}}`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get portfolio (nested) — endpoint 1:N",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/{{portfolioId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "{{portfolioId}}"]
+            },
+            "description": "🔥 **Endpoint principal da Sprint 2.**\n\nRetorna o portfólio com seus investimentos aninhados em um único request:\n\n```json\n{\n  \"data\": {\n    \"id\": \"...\",\n    \"name\": \"...\",\n    \"type\": \"simulated\",\n    \"investments\": [\n      { \"id\": \"...\", \"ticker\": \"BTC\", ... },\n      { \"id\": \"...\", \"ticker\": \"ETH\", ... }\n    ]\n  }\n}\n```\n\nOrdenado por `purchase_date DESC, created_at DESC`."
+          },
+          "response": []
+        },
+        {
+          "name": "Update portfolio",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cripto Renomeado\",\n  \"description\": \"Atualizada via Postman\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/{{portfolioId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "{{portfolioId}}"]
+            },
+            "description": "Atualização parcial — passe só os campos que quiser mudar."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete portfolio (cascades to investments)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/{{portfolioId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "{{portfolioId}}"]
+            },
+            "description": "Deleta o portfólio. Por `ON DELETE CASCADE` no schema, todos os investimentos dele somem junto."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Investments",
+      "item": [
+        {
+          "name": "Create investment in portfolio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.collectionVariables.set('investmentId', data.id);",
+                  "  console.log('investmentId salvo:', data.id);",
+                  "} else {",
+                  "  console.log('Create falhou:', pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticker\": \"BTC\",\n  \"asset_type\": \"crypto\",\n  \"amount_invested\": \"5000.00\",\n  \"quantity\": \"0.05\",\n  \"purchase_date\": \"2025-02-15\",\n  \"notes\": \"Compra de exemplo\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/{{portfolioId}}/investments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "{{portfolioId}}", "investments"]
+            },
+            "description": "Adiciona um investimento a um portfólio existente.\n\n**Validações:**\n- `ticker` obrigatório\n- `asset_type` deve ser `stock`, `crypto`, `etf` ou `index`\n- `amount_invested` decimal como string (ex: `\"1234.56\"`)\n- `quantity` opcional, decimal como string\n- `purchase_date` no formato `YYYY-MM-DD`\n- `notes` opcional\n\nValores monetários são DECIMAL no Postgres — nunca float."
+          },
+          "response": []
+        },
+        {
+          "name": "Create second investment (for nested demo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticker\": \"ETH\",\n  \"asset_type\": \"crypto\",\n  \"amount_invested\": \"3000.00\",\n  \"quantity\": \"1.2\",\n  \"purchase_date\": \"2025-04-10\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/{{portfolioId}}/investments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "{{portfolioId}}", "investments"]
+            },
+            "description": "Use esse pra popular o portfólio com mais de um investimento e tornar o **Get portfolio (nested)** mais expressivo na demo do vídeo."
+          },
+          "response": []
+        },
+        {
+          "name": "Get investment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/investments/{{investmentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "investments", "{{investmentId}}"]
+            },
+            "description": "Busca um investimento pelo id. Faz um JOIN com portfolios pra checar ownership em uma única query (`GetInvestmentWithOwner`)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update investment",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticker\": \"BTC\",\n  \"amount_invested\": \"6000.00\",\n  \"notes\": \"Aumentei a posição\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/investments/{{investmentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "investments", "{{investmentId}}"]
+            },
+            "description": "Atualização parcial — passe só os campos que quiser mudar."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete investment",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/investments/{{investmentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "investments", "{{investmentId}}"]
+            },
+            "description": "Deleta um investimento individual (sem afetar o portfólio)."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
