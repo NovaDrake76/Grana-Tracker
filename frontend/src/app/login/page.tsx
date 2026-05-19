@@ -53,32 +53,24 @@ export default function LoginPage() {
   if (isLoading) return null;
 
   return (
-    <Box className="auth-backdrop">
-      <Container maxW="md" py={{ base: "10", md: "20" }} position="relative" zIndex="1">
-        <VStack gap="8">
-          <Flex direction="column" align="center" gap="3">
+    <Box minH="100vh" bg="gray.900">
+      <Container maxW="md" py={{ base: "10", md: "20" }}>
+        <VStack gap="6">
+          <Flex direction="column" align="center" gap="2">
             <Flex
-              w="64px"
-              h="64px"
+              w="48px"
+              h="48px"
               align="center"
               justify="center"
-              borderRadius="2xl"
-              fontSize="3xl"
+              bg="brand.600"
+              color="white"
+              borderRadius="md"
+              fontSize="2xl"
               fontWeight="bold"
-              color="gray.900"
-              style={{
-                background: "linear-gradient(135deg, #7dd3fc, #0ea5e9 50%, #0369a1)",
-                boxShadow:
-                  "0 12px 40px -8px rgba(14, 165, 233, 0.6), inset 0 1px 0 0 rgba(255,255,255,0.4)",
-              }}
             >
               G
             </Flex>
-            <Heading
-              size="2xl"
-              className="gradient-text"
-              textAlign="center"
-            >
+            <Heading size="lg" color="white">
               Grana Tracker
             </Heading>
             <Text color="gray.400" textAlign="center" fontSize="sm">
@@ -88,9 +80,11 @@ export default function LoginPage() {
 
           <Box
             w="100%"
-            className="glass-card"
+            bg="gray.800"
             p="8"
-            borderRadius="2xl"
+            borderRadius="md"
+            border="1px solid"
+            borderColor="gray.700"
           >
             <form onSubmit={handleSubmit}>
               <VStack gap="5">
@@ -104,10 +98,6 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="seu@email.com"
-                    bg="rgba(15, 23, 42, 0.5)"
-                    borderColor="rgba(148, 163, 184, 0.2)"
-                    _hover={{ borderColor: "rgba(148, 163, 184, 0.4)" }}
-                    _focus={{ borderColor: "brand.400", boxShadow: "0 0 0 1px var(--brand-500)" }}
                   />
                 </FieldRoot>
                 <FieldRoot required>
@@ -117,10 +107,6 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    bg="rgba(15, 23, 42, 0.5)"
-                    borderColor="rgba(148, 163, 184, 0.2)"
-                    _hover={{ borderColor: "rgba(148, 163, 184, 0.4)" }}
-                    _focus={{ borderColor: "brand.400", boxShadow: "0 0 0 1px var(--brand-500)" }}
                   />
                 </FieldRoot>
                 <Button
@@ -128,22 +114,18 @@ export default function LoginPage() {
                   colorPalette="blue"
                   w="100%"
                   loading={loading}
-                  size="md"
-                  style={{
-                    background: "linear-gradient(135deg, #0ea5e9, #0284c7)",
-                    boxShadow: "0 8px 24px -8px rgba(14, 165, 233, 0.6)",
-                  }}
                 >
                   Entrar
                 </Button>
                 <Box
                   w="100%"
-                  borderTop="1px solid rgba(148, 163, 184, 0.1)"
+                  borderTop="1px solid"
+                  borderColor="gray.700"
                   pt="4"
                 >
                   <Text fontSize="sm" color="gray.400" textAlign="center">
                     Não tem uma conta?{" "}
-                    <ChakraLink asChild color="brand.300" fontWeight="medium">
+                    <ChakraLink asChild color="brand.400" fontWeight="medium">
                       <NextLink href="/register">Criar conta</NextLink>
                     </ChakraLink>
                   </Text>

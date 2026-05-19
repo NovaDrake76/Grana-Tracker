@@ -23,7 +23,6 @@ import {
   EyeIcon,
   PencilIcon,
   PlusIcon,
-  PortfolioIcon,
   TrashIcon,
 } from "@/components/Icons";
 
@@ -81,66 +80,32 @@ export default function PortfoliosPage() {
 
   return (
     <Stack gap="6">
-      <Box className="hero-card" p={{ base: "6", md: "7" }}>
-        <Flex
-          justify="space-between"
-          align={{ base: "start", md: "center" }}
-          wrap="wrap"
-          gap="4"
-          position="relative"
-          zIndex="1"
-        >
-          <Box>
-            <Text
-              fontSize="sm"
-              color="brand.300"
-              fontWeight="medium"
-              mb="2"
-              letterSpacing="0.05em"
-            >
-              SEUS PORTFÓLIOS
-            </Text>
-            <Heading size="xl" className="gradient-text">
-              Carteiras
-            </Heading>
-            <Text color="gray.400" mt="2">
-              Reais e simuladas, lado a lado
-            </Text>
-          </Box>
-          <NextLink href="/dashboard/portfolios/new">
-            <Button
-              colorPalette="blue"
-              style={{
-                background: "linear-gradient(135deg, #0ea5e9, #0284c7)",
-                boxShadow: "0 8px 24px -8px rgba(14, 165, 233, 0.6)",
-              }}
-            >
-              <PlusIcon size={16} />
-              <Text ml="2">Novo portfólio</Text>
-            </Button>
-          </NextLink>
-        </Flex>
-      </Box>
+      <Flex justify="space-between" align="end" wrap="wrap" gap="4">
+        <Box>
+          <Heading size="xl" color="white">
+            Portfólios
+          </Heading>
+          <Text color="gray.400" mt="1">
+            Suas carteiras reais e simuladas
+          </Text>
+        </Box>
+        <NextLink href="/dashboard/portfolios/new">
+          <Button colorPalette="blue">
+            <PlusIcon size={16} />
+            <Text ml="2">Novo portfólio</Text>
+          </Button>
+        </NextLink>
+      </Flex>
 
       {portfolios.length === 0 ? (
-        <Box className="glass-card" borderRadius="xl" p="12" textAlign="center">
-          <Flex
-            w="72px"
-            h="72px"
-            mx="auto"
-            mb="5"
-            align="center"
-            justify="center"
-            color="brand.300"
-            borderRadius="full"
-            style={{
-              background:
-                "linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(168, 85, 247, 0.15))",
-              boxShadow: "0 0 40px -8px rgba(14, 165, 233, 0.4)",
-            }}
-          >
-            <PortfolioIcon size={36} />
-          </Flex>
+        <Box
+          bg="gray.800"
+          border="1px solid"
+          borderColor="gray.700"
+          borderRadius="md"
+          p="10"
+          textAlign="center"
+        >
           <Heading size="md" color="white" mb="2">
             Nenhum portfólio ainda
           </Heading>
@@ -159,8 +124,11 @@ export default function PortfoliosPage() {
           {portfolios.map((portfolio) => (
             <Box
               key={portfolio.id}
-              className="glass-card lift"
-              borderRadius="xl"
+              className="lift"
+              bg="gray.800"
+              borderRadius="md"
+              border="1px solid"
+              borderColor="gray.700"
               overflow="hidden"
             >
               <Box className={`accent-bar ${portfolio.type}`} />

@@ -39,7 +39,6 @@ import {
   TrashIcon,
   WalletIcon,
   TrendingUpIcon,
-  SparkleIcon,
 } from "@/components/Icons";
 
 const ASSET_TYPES: AssetType[] = ["stock", "crypto", "etf", "index"];
@@ -227,67 +226,41 @@ export default function PortfolioDetailPage({
         <Text
           fontSize="sm"
           color="gray.500"
-          _hover={{ color: "brand.300" }}
+          _hover={{ color: "brand.400" }}
           display="inline-block"
-          transition="color 0.15s"
         >
           ← Portfólios
         </Text>
       </NextLink>
 
-      <Box className="hero-card" p={{ base: "6", md: "8" }}>
-        <Flex
-          justify="space-between"
-          align={{ base: "start", md: "end" }}
-          wrap="wrap"
-          gap="4"
-          position="relative"
-          zIndex="1"
-        >
-          <Box>
-            <HStack mb="3">
-              <Badge
-                colorPalette={isReal ? "blue" : "purple"}
-                variant={isReal ? "solid" : "outline"}
-                size="sm"
-              >
-                {portfolio.type}
-              </Badge>
-              <Text fontSize="sm" color="gray.500">
-                Criado em{" "}
-                {new Date(portfolio.created_at).toLocaleDateString("pt-BR")}
-              </Text>
-            </HStack>
-            <Heading
-              size="2xl"
-              className="gradient-text"
-              lineHeight="1.1"
-              mb="2"
-            >
+      <Flex justify="space-between" align="end" wrap="wrap" gap="4">
+        <Box>
+          <HStack mb="2">
+            <Heading size="xl" color="white">
               {portfolio.name}
             </Heading>
-            {portfolio.description && (
-              <Text color="gray.300" maxW="2xl">
-                {portfolio.description}
-              </Text>
-            )}
-          </Box>
-          <NextLink href={`/dashboard/portfolios/${portfolio.id}/edit`}>
-            <Button
-              size="sm"
-              variant="outline"
-              borderColor="rgba(148, 163, 184, 0.3)"
-              _hover={{
-                bg: "rgba(148, 163, 184, 0.1)",
-                borderColor: "brand.400",
-              }}
+            <Badge
+              colorPalette={isReal ? "blue" : "purple"}
+              variant={isReal ? "solid" : "outline"}
             >
-              <PencilIcon size={14} />
-              <Text ml="2">Editar</Text>
-            </Button>
-          </NextLink>
-        </Flex>
-      </Box>
+              {portfolio.type}
+            </Badge>
+          </HStack>
+          {portfolio.description && (
+            <Text color="gray.400">{portfolio.description}</Text>
+          )}
+          <Text fontSize="xs" color="gray.500" mt="2">
+            Criado em{" "}
+            {new Date(portfolio.created_at).toLocaleDateString("pt-BR")}
+          </Text>
+        </Box>
+        <NextLink href={`/dashboard/portfolios/${portfolio.id}/edit`}>
+          <Button size="sm" variant="outline">
+            <PencilIcon size={14} />
+            <Text ml="2">Editar</Text>
+          </Button>
+        </NextLink>
+      </Flex>
 
       <SimpleGrid columns={{ base: 1, sm: 3 }} gap="4">
         <StatCard
@@ -321,38 +294,21 @@ export default function PortfolioDetailPage({
         />
       </SimpleGrid>
 
-      <Box className="glass-card" borderRadius="xl" overflow="hidden">
-        <Flex
-          align="center"
-          gap="3"
-          px="5"
-          py="4"
-          borderBottom="1px solid rgba(148, 163, 184, 0.08)"
-        >
-          <Flex
-            w="36px"
-            h="36px"
-            align="center"
-            justify="center"
-            color="brand.300"
-            borderRadius="lg"
-            style={{
-              background:
-                "linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(14, 165, 233, 0.05))",
-              border: "1px solid rgba(14, 165, 233, 0.25)",
-            }}
-          >
-            <PlusIcon size={16} />
-          </Flex>
-          <Box>
-            <Heading size="sm" color="white">
-              Adicionar investimento
-            </Heading>
-            <Text fontSize="xs" color="gray.500">
-              Inclua uma nova posição neste portfólio
-            </Text>
-          </Box>
-        </Flex>
+      <Box
+        bg="gray.800"
+        border="1px solid"
+        borderColor="gray.700"
+        borderRadius="md"
+        overflow="hidden"
+      >
+        <Box px="5" py="4" borderBottom="1px solid" borderColor="gray.700">
+          <Heading size="sm" color="white">
+            Adicionar investimento
+          </Heading>
+          <Text fontSize="xs" color="gray.500" mt="1">
+            Inclua uma nova posição neste portfólio
+          </Text>
+        </Box>
         <Box p="5">
           <form onSubmit={handleAddInvestment}>
             <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap="4">
@@ -420,25 +376,28 @@ export default function PortfolioDetailPage({
               colorPalette="blue"
               mt="5"
               loading={submitting}
-              style={{
-                background: "linear-gradient(135deg, #0ea5e9, #0284c7)",
-                boxShadow: "0 8px 24px -8px rgba(14, 165, 233, 0.5)",
-              }}
             >
               <PlusIcon size={16} />
-              <Text ml="2">Adicionar investimento</Text>
+              <Text ml="2">Adicionar</Text>
             </Button>
           </form>
         </Box>
       </Box>
 
-      <Box className="glass-card" borderRadius="xl" overflow="hidden">
+      <Box
+        bg="gray.800"
+        border="1px solid"
+        borderColor="gray.700"
+        borderRadius="md"
+        overflow="hidden"
+      >
         <Flex
           align="center"
           justify="space-between"
           px="5"
           py="4"
-          borderBottom="1px solid rgba(148, 163, 184, 0.08)"
+          borderBottom="1px solid"
+          borderColor="gray.700"
         >
           <Heading size="sm" color="white">
             Investimentos
@@ -449,23 +408,6 @@ export default function PortfolioDetailPage({
         </Flex>
         {portfolio.investments.length === 0 ? (
           <Box p="10" textAlign="center">
-            <Flex
-              w="56px"
-              h="56px"
-              mx="auto"
-              mb="4"
-              align="center"
-              justify="center"
-              color="brand.300"
-              borderRadius="full"
-              style={{
-                background:
-                  "linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(168, 85, 247, 0.15))",
-                boxShadow: "0 0 30px -8px rgba(14, 165, 233, 0.4)",
-              }}
-            >
-              <SparkleIcon size={28} />
-            </Flex>
             <Text color="gray.400">
               Nenhum investimento ainda. Adicione um acima.
             </Text>

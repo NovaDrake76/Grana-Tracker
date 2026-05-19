@@ -66,7 +66,7 @@ export default function DashboardLayout({
 
   if (isLoading) {
     return (
-      <Center h="100vh" className="app-backdrop">
+      <Center h="100vh" bg="gray.900">
         <Spinner size="xl" color="brand.500" />
       </Center>
     );
@@ -75,35 +75,28 @@ export default function DashboardLayout({
   if (!isAuthenticated) return null;
 
   return (
-    <Flex h="100vh" className="app-backdrop">
+    <Flex h="100vh" bg="gray.900">
       <Box
         as="aside"
-        w="260px"
-        p="5"
+        w="240px"
+        p="4"
         display="flex"
         flexDirection="column"
-        position="relative"
-        zIndex="2"
-        bg="rgba(2, 6, 23, 0.6)"
-        backdropFilter="blur(20px)"
+        bg="gray.800"
         borderRight="1px solid"
-        borderColor="rgba(148, 163, 184, 0.1)"
+        borderColor="gray.700"
       >
-        <Flex align="center" gap="3" mb="8" px="1">
+        <Flex align="center" gap="3" mb="6" px="1">
           <Flex
-            w="40px"
-            h="40px"
+            w="36px"
+            h="36px"
             align="center"
             justify="center"
-            borderRadius="lg"
+            bg="brand.600"
+            color="white"
+            borderRadius="md"
             fontWeight="bold"
-            fontSize="xl"
-            color="gray.900"
-            style={{
-              background: "linear-gradient(135deg, #38bdf8, #0ea5e9)",
-              boxShadow:
-                "0 0 24px -4px rgba(14, 165, 233, 0.6), inset 0 1px 0 0 rgba(255,255,255,0.3)",
-            }}
+            fontSize="lg"
           >
             G
           </Flex>
@@ -111,8 +104,8 @@ export default function DashboardLayout({
             <Heading size="sm" color="white" lineHeight="1.1">
               Grana Tracker
             </Heading>
-            <Text fontSize="xs" color="gray.500">
-              Investimentos unificados
+            <Text fontSize="xs" color="gray.400">
+              Investimentos
             </Text>
           </Box>
         </Flex>
@@ -125,25 +118,23 @@ export default function DashboardLayout({
                 align="center"
                 gap="3"
                 px="3"
-                py="2.5"
+                py="2"
                 borderRadius="md"
                 cursor={item.disabled ? "not-allowed" : "pointer"}
                 opacity={item.disabled ? 0.45 : 1}
+                bg={active ? "gray.700" : "transparent"}
                 color={active ? "white" : "gray.300"}
-                fontWeight={active ? "semibold" : "medium"}
+                fontWeight={active ? "semibold" : "normal"}
                 fontSize="sm"
-                position="relative"
-                className={active ? "nav-active" : undefined}
-                transition="background 0.15s, color 0.15s"
                 _hover={
                   item.disabled
                     ? undefined
                     : active
                       ? undefined
-                      : { bg: "rgba(148, 163, 184, 0.08)", color: "white" }
+                      : { bg: "gray.700", color: "white" }
                 }
               >
-                <Box color={active ? "brand.300" : "gray.400"}>{item.icon}</Box>
+                <Box color={active ? "brand.400" : "gray.400"}>{item.icon}</Box>
                 <Text>{item.label}</Text>
                 {item.disabled && (
                   <Badge
@@ -170,26 +161,18 @@ export default function DashboardLayout({
           })}
         </VStack>
 
-        <Box
-          borderTop="1px solid"
-          borderColor="rgba(148, 163, 184, 0.1)"
-          pt="4"
-          mt="4"
-        >
+        <Box borderTop="1px solid" borderColor="gray.700" pt="3" mt="3">
           <Flex align="center" gap="3" px="1" mb="3">
             <Flex
-              w="36px"
-              h="36px"
+              w="32px"
+              h="32px"
               align="center"
               justify="center"
+              bg="gray.700"
               color="white"
               borderRadius="full"
-              fontSize="sm"
+              fontSize="xs"
               fontWeight="bold"
-              style={{
-                background: "linear-gradient(135deg, #0369a1, #075985)",
-                boxShadow: "inset 0 1px 0 0 rgba(255,255,255,0.15)",
-              }}
             >
               {initials(user?.name)}
             </Flex>
@@ -208,7 +191,7 @@ export default function DashboardLayout({
             w="100%"
             justifyContent="flex-start"
             color="gray.400"
-            _hover={{ bg: "rgba(239, 68, 68, 0.1)", color: "loss" }}
+            _hover={{ bg: "gray.700", color: "loss" }}
             onClick={logout}
           >
             <LogoutIcon size={16} />
@@ -217,18 +200,8 @@ export default function DashboardLayout({
         </Box>
       </Box>
 
-      <Box
-        flex="1"
-        overflowY="auto"
-        position="relative"
-        zIndex="1"
-      >
-        <Box
-          maxW="1200px"
-          mx="auto"
-          p={{ base: "5", md: "8" }}
-          className="above-backdrop"
-        >
+      <Box flex="1" overflowY="auto" bg="gray.900">
+        <Box maxW="1200px" mx="auto" p={{ base: "5", md: "8" }}>
           {children}
         </Box>
       </Box>

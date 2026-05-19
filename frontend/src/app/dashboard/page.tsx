@@ -26,7 +26,6 @@ import {
   LayersIcon,
   PlusIcon,
   PortfolioIcon,
-  SparkleIcon,
   TrendingUpIcon,
   WalletIcon,
 } from "@/components/Icons";
@@ -106,52 +105,22 @@ export default function DashboardPage() {
 
   return (
     <Stack gap="6">
-      <Box className="hero-card" p={{ base: "6", md: "8" }}>
-        <Flex
-          justify="space-between"
-          align={{ base: "start", md: "end" }}
-          wrap="wrap"
-          gap="4"
-          position="relative"
-          zIndex="1"
-        >
-          <Box>
-            <Text
-              fontSize="sm"
-              color="brand.300"
-              fontWeight="medium"
-              mb="2"
-              letterSpacing="0.05em"
-            >
-              VISÃO GERAL
-            </Text>
-            <Heading
-              size="2xl"
-              lineHeight="1.1"
-              mb="2"
-              className="gradient-text"
-            >
-              Olá, {firstName} 👋
-            </Heading>
-            <Text color="gray.400" maxW="md">
-              Resumo das suas carteiras reais e simuladas em um único painel.
-            </Text>
-          </Box>
-          <NextLink href="/dashboard/portfolios/new">
-            <Button
-              colorPalette="blue"
-              size="md"
-              style={{
-                background: "linear-gradient(135deg, #0ea5e9, #0284c7)",
-                boxShadow: "0 8px 24px -8px rgba(14, 165, 233, 0.6)",
-              }}
-            >
-              <PlusIcon size={16} />
-              <Text ml="2">Novo portfólio</Text>
-            </Button>
-          </NextLink>
-        </Flex>
-      </Box>
+      <Flex justify="space-between" align="end" wrap="wrap" gap="4">
+        <Box>
+          <Heading size="xl" color="white">
+            Olá, {firstName}
+          </Heading>
+          <Text color="gray.400" mt="1">
+            Resumo das suas carteiras reais e simuladas
+          </Text>
+        </Box>
+        <NextLink href="/dashboard/portfolios/new">
+          <Button colorPalette="blue">
+            <PlusIcon size={16} />
+            <Text ml="2">Novo portfólio</Text>
+          </Button>
+        </NextLink>
+      </Flex>
 
       <SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} gap="4">
         <StatCard
@@ -199,34 +168,20 @@ export default function DashboardPage() {
           </Heading>
           <NextLink href="/dashboard/portfolios">
             <Button size="sm" variant="ghost" colorPalette="blue">
-              Ver todos →
+              Ver todos
             </Button>
           </NextLink>
         </Flex>
 
         {recent.length === 0 ? (
           <Box
-            className="glass-card"
-            borderRadius="xl"
-            p="12"
+            bg="gray.800"
+            border="1px solid"
+            borderColor="gray.700"
+            borderRadius="md"
+            p="10"
             textAlign="center"
           >
-            <Flex
-              w="64px"
-              h="64px"
-              mx="auto"
-              mb="5"
-              align="center"
-              justify="center"
-              color="brand.300"
-              borderRadius="full"
-              style={{
-                background: "linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(168, 85, 247, 0.15))",
-                boxShadow: "0 0 40px -8px rgba(14, 165, 233, 0.4)",
-              }}
-            >
-              <SparkleIcon size={32} />
-            </Flex>
             <Heading size="md" color="white" mb="2">
               Vamos começar?
             </Heading>
@@ -254,13 +209,14 @@ export default function DashboardPage() {
                   style={{ display: "block" }}
                 >
                   <Box
-                    className="glass-card lift"
-                    borderRadius="xl"
+                    className="lift"
+                    bg="gray.800"
+                    border="1px solid"
+                    borderColor="gray.700"
+                    borderRadius="md"
                     overflow="hidden"
                   >
-                    <Box
-                      className={`accent-bar ${p.type}`}
-                    />
+                    <Box className={`accent-bar ${p.type}`} />
                     <Box p="5">
                       <Flex justify="space-between" align="start" mb="3">
                         <Heading size="sm" color="white" lineClamp={1}>
@@ -274,12 +230,7 @@ export default function DashboardPage() {
                           {p.type}
                         </Badge>
                       </Flex>
-                      <HStack
-                        gap="4"
-                        fontSize="xs"
-                        color="gray.400"
-                        mb="3"
-                      >
+                      <HStack gap="4" fontSize="xs" color="gray.400" mb="3">
                         <Text>
                           <Text as="span" color="white" fontWeight="bold">
                             {p.investments.length}
