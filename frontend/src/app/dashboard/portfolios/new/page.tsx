@@ -71,6 +71,9 @@ export default function NewPortfolioPage() {
               <FieldLabel>Type</FieldLabel>
               <NativeSelectRoot>
                 <NativeSelectField
+                  cursor="pointer"
+                  border="1px solid"
+                  borderColor="gray.700"
                   value={type}
                   onChange={(e) => setType(e.target.value)}
                 >
