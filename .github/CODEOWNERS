@@ -1,0 +1,28 @@
+# CODEOWNERS — reviewers padrão do Grana Tracker (time DIM0547).
+# As entradas abaixo definem quem é automaticamente solicitado para revisar
+# PRs que tocam cada caminho. A última regra que casa com um arquivo é a que
+# vale (regra do GitHub).
+#
+# Time DIM0547 (DSWII) — Prof. Fernando Figueira:
+#   - Nathan Araújo Marques     -> @NovaDrake76 (PO + back-end + front-end, admin do repo)
+#   - Breno Jalmir              -> @BrenoJalmir (back-end)
+#   - Heittor Vinícius          -> @heittorvcs (front-end)
+#
+# NOTA: @heittorvcs ainda tem convite pendente no repositório
+# (gh api repos/NovaDrake76/grana-tracker/invitations). Aceitar para que o
+# CODEOWNERS funcione na prática — sem isso o GitHub ignora a atribuição.
+
+# Fallback global — todo PR pede review de pelo menos o Nathan
+*                 @NovaDrake76
+
+# Backend (Go, sqlc, migrations) — Breno + Nathan
+/backend/         @BrenoJalmir @NovaDrake76
+
+# Frontend (Next.js, Chakra UI) — Heittor + Nathan
+/frontend/        @heittorvcs @NovaDrake76
+
+# Documentação e arquitetura
+/docs/            @NovaDrake76
+
+# Configuração de CI/CD e governança
+/.github/         @NovaDrake76
