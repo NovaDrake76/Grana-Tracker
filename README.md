@@ -71,10 +71,12 @@ The first time the API starts it runs the migration in `backend/db/migrations/00
 
 ## Tests
 
-The backend has two layers of tests:
+Hoje o backend tem ~33 testes verdes divididos em duas camadas:
 
 - **Unit tests** (no DB): `internal/services`, `internal/middleware`, and handler helpers. Always run.
 - **Integration tests** (real Postgres): `internal/handlers` — hit the real HTTP + SQL stack. Run only when `TEST_DATABASE_URL` is set; skip cleanly otherwise.
+
+O CI (`.github/workflows/ci.yml`) roda `go build`, `go vet` e `go test ./... -race -count=1` contra um Postgres 16 fresco a cada push/PR.
 
 ### Run only the unit tests
 
@@ -137,6 +139,46 @@ docker-compose.yml
 
 ## Current state
 
-Working: registration, login, JWT refresh, user profile, portfolio CRUD, `/healthz` and `/readyz` probes, automated tests (unit + integration), GitHub Actions CI.
+Sprint 2 + Sprint 3 finalizados. Entregue nesta versão:
 
-Still to do: investment CRUD, dashboard summary, live price fetching, charts, sqlc migration, Clean Architecture layering, OpenAPI docs.
+- Auth completa: JWT HS256 (signing method pinned), bcrypt (DefaultCost), refresh token com rotação e *theft response* (família invalidada em reuso), rate-limit por IP (10 req/min) em `/api/auth`, security response headers.
+- CRUD completo de users, portfolios e investments, todo migrado para **sqlc** (queries tipadas e parametrizadas).
+- Endpoint `GET /api/portfolios/{id}` devolve o portfólio com os investimentos aninhados (1:N).
+- 33+ testes verdes rodando no CI (unit + integração com Postgres real).
+- Cobertura OWASP Top 10: A02 (criptografia), A03 (injeção), A05 (misconfiguration / headers / CORS) e A07 (auth & identity).
+- `/healthz` e `/readyz` probes.
+- OpenAPI 3.0.3 publicada — ver [API Reference](#api-reference).
+
+Ainda em aberto (fora do escopo desta entrega): dashboard summary, live price fetching e charts.
+
+## API Reference
+
+Toda a documentação da API vive em `docs/`:
+
+- [`docs/openapi.yaml`](docs/openapi.yaml) — spec OpenAPI 3.0.3
+- [`docs/GranaTracker.postman_collection.json`](docs/GranaTracker.postman_collection.json) — coleção Postman (importável)
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — diagrama do sistema e decisões técnicas
+- [`docs/ERD.md`](docs/ERD.md) — modelo de dados
+
+## Segurança
+
+Controles aplicados no backend (cobrindo OWASP A02/A03/A05/A07):
+
+- Senhas com **bcrypt** (`DefaultCost`).
+- **JWT HS256** com signing method *pinned* na validação (impede `alg: none` e troca de algoritmo).
+- **Refresh token com rotação**: cada refresh invalida o anterior; reuso detectado invalida toda a família (*theft response*).
+- **Rate-limit por IP**: 10 req/min em `/api/auth/*` para mitigar brute-force.
+- **Security response headers** aplicados globalmente (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, etc.).
+- **SQL 100% parametrizado** via sqlc — nenhuma string concatenada.
+- **CORS escopado por env** (`FRONTEND_URL`), sem `*` em produção.
+- **Ownership / IDOR check** em todas as rotas `/{id}`: o `user_id` do JWT precisa bater com o dono do recurso.
+- **401 genérico** em login para evitar enumeração de usuário ("invalid credentials" sempre, sem distinguir email vs senha).
+- **`DisallowUnknownFields`** em todos os decoders JSON, recusando payloads com campos extras.
+
+## Time
+
+DIM0547 — Desenvolvimento de Sistemas Web II:
+
+- Breno Jalmir
+- Nathan Araújo
+- Heitor Vinícius

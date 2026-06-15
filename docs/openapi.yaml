@@ -1,0 +1,921 @@
+openapi: 3.0.3
+info:
+  title: Grana Tracker API
+  version: 1.0.0
+  description: |
+    REST API for portfolio + investment tracking.
+
+    Auth: JWT Bearer (15-min access, 7-day refresh with ROTATION — each refresh
+    issues a new token and invalidates the old).
+
+    Money values are decimal strings to avoid float precision loss.
+    Timestamps are RFC3339.
+
+    All successful responses are wrapped in a top-level `data` field.
+    All error responses share the shape `{ "error": string, "code": string }`.
+  contact:
+    name: Grana Tracker
+    url: https://github.com/NovaDrake76/grana-tracker
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local
+
+tags:
+  - name: Health
+    description: Liveness and readiness probes for orchestrators.
+  - name: Auth
+    description: Registration, login, and refresh-token rotation. Rate-limited to 10 req/min per IP.
+  - name: User
+    description: Authenticated user profile management.
+  - name: Portfolios
+    description: CRUD over the authenticated user's portfolios (real or simulated).
+  - name: Investments
+    description: CRUD over investments inside an owned portfolio.
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      description: Always returns 200 so orchestrators can confirm the process is running, independent of database state.
+      security: []
+      responses:
+        '200':
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      description: Returns 200 only when the database connection pool is reachable; 503 otherwise.
+      security: []
+      responses:
+        '200':
+          description: Service is ready to accept traffic.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        '503':
+          description: Database is not reachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      description: Creates a new user with a hashed password and returns an initial JWT token pair.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              name: Ada Lovelace
+              email: ada@example.com
+              password: hunter2pass
+      responses:
+        '201':
+          description: User created; token pair returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TokenPair'
+                  message:
+                    type: string
+                    example: user registered successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Email already registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: email already registered
+                code: DUPLICATE_ERROR
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      description: Verifies the credentials and returns a fresh access/refresh token pair on success.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: ada@example.com
+              password: hunter2pass
+      responses:
+        '200':
+          description: Authenticated; token pair returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TokenPair'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          description: Invalid email or password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: invalid email or password
+                code: AUTH_ERROR
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the refresh token
+      description: Exchanges a valid refresh token for a new pair; the previous refresh token is invalidated.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refresh_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '200':
+          description: New token pair issued; old refresh token is now invalid.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TokenPair'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          description: Refresh token is invalid, revoked, or expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: invalid refresh token
+                code: AUTH_ERROR
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/user/me:
+    get:
+      tags: [User]
+      summary: Get the authenticated user's profile
+      description: Returns the profile of the user identified by the bearer JWT.
+      responses:
+        '200':
+          description: Current user profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [User]
+      summary: Update the authenticated user's profile
+      description: Patches `name` and/or `preferred_currency` on the authenticated user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+            example:
+              name: Ada L.
+              preferred_currency: USD
+      responses:
+        '200':
+          description: Updated user profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+                  message:
+                    type: string
+                    example: user updated successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/portfolios:
+    get:
+      tags: [Portfolios]
+      summary: List the caller's portfolios
+      description: Returns every portfolio owned by the authenticated user, newest first.
+      responses:
+        '200':
+          description: Array of portfolios (may be empty).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Portfolio'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Portfolios]
+      summary: Create a portfolio
+      description: Creates a portfolio for the authenticated user; `type` must be `real` or `simulated`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePortfolioRequest'
+            example:
+              name: Long-term BR stocks
+              type: real
+              description: B3 dividend payers
+      responses:
+        '201':
+          description: Portfolio created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Portfolio'
+                  message:
+                    type: string
+                    example: portfolio created successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/portfolios/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PortfolioId'
+    get:
+      tags: [Portfolios]
+      summary: Get a portfolio with its investments
+      description: Returns a single portfolio plus its nested investments (1:N payload); 403 if the caller does not own it.
+      responses:
+        '200':
+          description: Portfolio with nested investments.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PortfolioWithInvestments'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Portfolios]
+      summary: Update a portfolio
+      description: Patches any subset of `name`, `type`, or `description` after verifying ownership.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePortfolioRequest'
+            example:
+              name: Long-term BR dividends
+              type: real
+      responses:
+        '200':
+          description: Updated portfolio.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Portfolio'
+                  message:
+                    type: string
+                    example: portfolio updated successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Portfolios]
+      summary: Delete a portfolio
+      description: Deletes the portfolio and cascades to its investments after verifying ownership.
+      responses:
+        '200':
+          description: Portfolio deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: portfolio deleted successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/portfolios/{id}/investments:
+    parameters:
+      - $ref: '#/components/parameters/PortfolioId'
+    post:
+      tags: [Portfolios]
+      summary: Add an investment to a portfolio
+      description: Creates an investment inside a portfolio the caller owns; monetary fields are sent as decimal strings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvestmentRequest'
+            example:
+              ticker: PETR4
+              asset_type: stock
+              amount_invested: "1500.75"
+              quantity: "50"
+              purchase_date: "2026-04-10"
+              notes: Bought after Q1 earnings
+      responses:
+        '201':
+          description: Investment created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Investment'
+                  message:
+                    type: string
+                    example: investment created successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/investments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/InvestmentId'
+    get:
+      tags: [Investments]
+      summary: Get an investment
+      description: Returns a single investment after verifying the caller owns its parent portfolio.
+      responses:
+        '200':
+          description: Investment payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Investment'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Investments]
+      summary: Update an investment
+      description: Patches any subset of fields on an investment the caller owns.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInvestmentRequest'
+            example:
+              amount_invested: "1800.00"
+              quantity: "60"
+              notes: Added on dip
+      responses:
+        '200':
+          description: Updated investment.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Investment'
+                  message:
+                    type: string
+                    example: investment updated successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Investments]
+      summary: Delete an investment
+      description: Deletes an investment after verifying the caller owns its parent portfolio.
+      responses:
+        '200':
+          description: Investment deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: investment deleted successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from POST /api/auth/login or /refresh (15-min TTL).
+
+  parameters:
+    PortfolioId:
+      name: id
+      in: path
+      required: true
+      description: Portfolio UUID.
+      schema:
+        type: string
+        format: uuid
+      example: 4f9d2c0a-4d8e-4d22-9b8f-4a3e6e2c9b11
+    InvestmentId:
+      name: id
+      in: path
+      required: true
+      description: Investment UUID.
+      schema:
+        type: string
+        format: uuid
+      example: 8b7e1f44-2cf6-4a1f-9f81-7c4e0a96d2a3
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+          example: invalid request body
+        code:
+          type: string
+          description: Stable machine-readable error code.
+          enum:
+            - VALIDATION_ERROR
+            - AUTH_ERROR
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - DUPLICATE_ERROR
+            - RATE_LIMITED
+            - INTERNAL_ERROR
+          example: VALIDATION_ERROR
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token]
+      properties:
+        access_token:
+          type: string
+          description: Short-lived JWT (15 minutes) used as a Bearer token.
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyIn0.signature
+        refresh_token:
+          type: string
+          description: Long-lived JWT (7 days). Rotated on every successful /refresh call.
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLXJlZnJlc2gifQ.signature
+
+    User:
+      type: object
+      required: [id, name, email, preferred_currency, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 6f1b8c2e-6e1d-4d5c-9c1b-2d3f6a8e0b11
+        name:
+          type: string
+          example: Ada Lovelace
+        email:
+          type: string
+          format: email
+          example: ada@example.com
+        preferred_currency:
+          type: string
+          description: ISO 4217 currency code. Defaults to BRL on registration.
+          default: BRL
+          example: BRL
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-12T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-04-22T18:33:21Z"
+
+    UpdateUserRequest:
+      type: object
+      description: Any field is optional; omit a field to leave it unchanged.
+      properties:
+        name:
+          type: string
+          example: Ada L.
+        preferred_currency:
+          type: string
+          example: USD
+
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          example: Ada Lovelace
+        email:
+          type: string
+          format: email
+          example: ada@example.com
+        password:
+          type: string
+          format: password
+          minLength: 6
+          example: hunter2pass
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: ada@example.com
+        password:
+          type: string
+          format: password
+          example: hunter2pass
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    Portfolio:
+      type: object
+      required: [id, user_id, name, type, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 4f9d2c0a-4d8e-4d22-9b8f-4a3e6e2c9b11
+        user_id:
+          type: string
+          format: uuid
+          example: 6f1b8c2e-6e1d-4d5c-9c1b-2d3f6a8e0b11
+        name:
+          type: string
+          example: Long-term BR stocks
+        type:
+          type: string
+          enum: [real, simulated]
+          example: real
+        description:
+          type: string
+          nullable: true
+          example: B3 dividend payers
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-01T09:15:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-05-20T13:42:10Z"
+
+    CreatePortfolioRequest:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+          example: Long-term BR stocks
+        type:
+          type: string
+          enum: [real, simulated]
+          example: real
+        description:
+          type: string
+          nullable: true
+          example: B3 dividend payers
+
+    UpdatePortfolioRequest:
+      type: object
+      description: All fields optional; only present fields are applied.
+      properties:
+        name:
+          type: string
+          example: Long-term BR dividends
+        type:
+          type: string
+          enum: [real, simulated]
+          example: real
+        description:
+          type: string
+          nullable: true
+          example: Now focused on dividend payers
+
+    Investment:
+      type: object
+      required: [id, portfolio_id, ticker, asset_type, amount_invested, purchase_date, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 8b7e1f44-2cf6-4a1f-9f81-7c4e0a96d2a3
+        portfolio_id:
+          type: string
+          format: uuid
+          example: 4f9d2c0a-4d8e-4d22-9b8f-4a3e6e2c9b11
+        ticker:
+          type: string
+          example: PETR4
+        asset_type:
+          type: string
+          enum: [stock, crypto, etf, index]
+          example: stock
+        amount_invested:
+          type: string
+          description: Decimal string to preserve precision (avoid float rounding).
+          example: "1500.75"
+        quantity:
+          type: string
+          nullable: true
+          description: Decimal string; nullable when the asset is amount-tracked only.
+          example: "50"
+        purchase_date:
+          type: string
+          format: date
+          example: "2026-04-10"
+        notes:
+          type: string
+          nullable: true
+          example: Bought after Q1 earnings
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-04-10T14:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-04-22T18:33:21Z"
+
+    CreateInvestmentRequest:
+      type: object
+      required: [ticker, asset_type, amount_invested, purchase_date]
+      properties:
+        ticker:
+          type: string
+          example: PETR4
+        asset_type:
+          type: string
+          enum: [stock, crypto, etf, index]
+          example: stock
+        amount_invested:
+          type: string
+          description: Decimal string (e.g. "1500.75").
+          example: "1500.75"
+        quantity:
+          type: string
+          nullable: true
+          example: "50"
+        purchase_date:
+          type: string
+          format: date
+          example: "2026-04-10"
+        notes:
+          type: string
+          nullable: true
+          example: Bought after Q1 earnings
+
+    UpdateInvestmentRequest:
+      type: object
+      description: All fields optional; only present fields are applied. Send an empty string for `quantity` to clear it.
+      properties:
+        ticker:
+          type: string
+          example: PETR4
+        asset_type:
+          type: string
+          enum: [stock, crypto, etf, index]
+          example: stock
+        amount_invested:
+          type: string
+          example: "1800.00"
+        quantity:
+          type: string
+          nullable: true
+          example: "60"
+        purchase_date:
+          type: string
+          format: date
+          example: "2026-05-02"
+        notes:
+          type: string
+          nullable: true
+          example: Added on dip
+
+    PortfolioWithInvestments:
+      allOf:
+        - $ref: '#/components/schemas/Portfolio'
+        - type: object
+          required: [investments]
+          properties:
+            investments:
+              type: array
+              items:
+                $ref: '#/components/schemas/Investment'
+
+  responses:
+    ValidationError:
+      description: Request body or path parameter failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: name, email, and password are required
+            code: VALIDATION_ERROR
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: unauthorized
+            code: UNAUTHORIZED
+    Forbidden:
+      description: Authenticated, but the resource belongs to another user.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: access denied
+            code: FORBIDDEN
+    NotFound:
+      description: Resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: portfolio not found
+            code: NOT_FOUND
+    RateLimited:
+      description: Too many requests from this IP (auth routes are limited to 10 req/min).
+      headers:
+        Retry-After:
+          description: Seconds until the next request is allowed.
+          schema:
+            type: integer
+            example: 30
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: too many requests
+            code: RATE_LIMITED
+    InternalError:
+      description: Unexpected server-side failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: internal server error
+            code: INTERNAL_ERROR
+
+security:
+  - bearerAuth: []
