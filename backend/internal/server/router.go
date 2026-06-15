@@ -1,9 +1,12 @@
 package server
 
 import (
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/go-chi/httprate"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
@@ -17,7 +20,7 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
 	queries := sqlc.New(pool)
 
 	authMiddleware := middleware.NewAuthMiddleware(jwtSecret)
-	authHandler := handlers.NewAuthHandler(queries, jwtSecret)
+	authHandler := handlers.NewAuthHandler(queries, pool, jwtSecret)
 	userHandler := handlers.NewUserHandler(queries)
 	portfolioHandler := handlers.NewPortfolioHandler(queries)
 	investmentHandler := handlers.NewInvestmentHandler(queries)
@@ -26,6 +29,7 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
+	r.Use(middleware.SecurityHeaders)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{frontendURL},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -39,6 +43,10 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
+			// OWASP A07 (Identification & Authentication Failures): cap each
+			// IP to 10 auth requests per minute to slow brute-force / credential
+			// stuffing attacks against /register, /login, and /refresh.
+			r.Use(httprate.LimitByIP(10, time.Minute))
 			r.Post("/register", authHandler.Register)
 			r.Post("/login", authHandler.Login)
 			r.Post("/refresh", authHandler.Refresh)

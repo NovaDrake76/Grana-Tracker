@@ -17,6 +17,15 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
+// decodeJSON decodes the request body into dst with DisallowUnknownFields set
+// so any extra/unexpected JSON field becomes a 400 error rather than being
+// silently dropped (OWASP A03 — Injection / mass-assignment defence).
+func decodeJSON(r *http.Request, dst any) error {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(dst)
+}
+
 func writeError(w http.ResponseWriter, status int, message, code string) {
 	writeJSON(w, status, map[string]string{
 		"error": message,

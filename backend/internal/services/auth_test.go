@@ -74,6 +74,29 @@ func TestValidateTokenRejectsMalformed(t *testing.T) {
 	}
 }
 
+// TestValidateTokenRejectsAlgNone crafts an unsigned JWT with alg=none and
+// confirms ValidateToken rejects it. This is the textbook JWT-confusion
+// attack (CVE-2015-9235 class) and the signing-method pin in the keyfunc is
+// the defence (OWASP A02 — Cryptographic Failures).
+func TestValidateTokenRejectsAlgNone(t *testing.T) {
+	claims := Claims{
+		UserID: uuid.New().String(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
+	signed, err := tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatalf("sign with none: %v", err)
+	}
+
+	if _, err := ValidateToken(signed, "any-secret"); err == nil {
+		t.Fatal("alg=none token was accepted; signing-method pin is missing")
+	}
+}
+
 func TestValidateTokenRejectsExpired(t *testing.T) {
 	secret := "test-secret"
 	claims := Claims{

@@ -72,7 +72,7 @@ func requireDB(t *testing.T) {
 func truncateAll(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(context.Background(),
-		"TRUNCATE users, portfolios, investments, price_cache, price_history RESTART IDENTITY CASCADE")
+		"TRUNCATE users, portfolios, investments, price_cache, price_history, refresh_tokens RESTART IDENTITY CASCADE")
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}

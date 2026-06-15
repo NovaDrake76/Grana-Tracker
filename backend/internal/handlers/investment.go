@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -102,7 +101,7 @@ func (h *InvestmentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createInvestmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", "VALIDATION_ERROR")
 		return
 	}
@@ -222,7 +221,7 @@ func (h *InvestmentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateInvestmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", "VALIDATION_ERROR")
 		return
 	}

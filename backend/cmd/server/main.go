@@ -28,6 +28,9 @@ func main() {
 	if dbURL == "" || jwtSecret == "" {
 		log.Fatal("DATABASE_URL and JWT_SECRET are required")
 	}
+	if len(jwtSecret) < 32 {
+		log.Fatal("JWT_SECRET must be at least 32 bytes (use a high-entropy random string)")
+	}
 	if port == "" {
 		port = "8080"
 	}

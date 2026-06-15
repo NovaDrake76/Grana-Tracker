@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	CreateInvestment(ctx context.Context, arg CreateInvestmentParams) (Investment, error)
 	CreatePortfolio(ctx context.Context, arg CreatePortfolioParams) (Portfolio, error)
+	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeleteInvestment(ctx context.Context, id pgtype.UUID) error
 	DeletePortfolio(ctx context.Context, id pgtype.UUID) error
@@ -20,10 +21,13 @@ type Querier interface {
 	// joins through portfolios so handlers can check ownership in a single round trip.
 	GetInvestmentWithOwner(ctx context.Context, id pgtype.UUID) (GetInvestmentWithOwnerRow, error)
 	GetPortfolioByID(ctx context.Context, id pgtype.UUID) (Portfolio, error)
+	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error)
 	ListInvestmentsByPortfolio(ctx context.Context, portfolioID pgtype.UUID) ([]Investment, error)
 	ListPortfoliosByUser(ctx context.Context, userID pgtype.UUID) ([]Portfolio, error)
+	RevokeAllUserRefreshTokens(ctx context.Context, userID pgtype.UUID) error
+	RevokeRefreshToken(ctx context.Context, arg RevokeRefreshTokenParams) error
 	UpdateInvestment(ctx context.Context, arg UpdateInvestmentParams) (Investment, error)
 	UpdatePortfolio(ctx context.Context, arg UpdatePortfolioParams) (Portfolio, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)

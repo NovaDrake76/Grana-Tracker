@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -96,7 +95,7 @@ func (h *PortfolioHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createPortfolioRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", "VALIDATION_ERROR")
 		return
 	}
@@ -202,7 +201,7 @@ func (h *PortfolioHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updatePortfolioRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", "VALIDATION_ERROR")
 		return
 	}
