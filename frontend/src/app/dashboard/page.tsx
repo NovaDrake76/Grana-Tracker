@@ -23,6 +23,12 @@ import type {
 } from "@/types";
 import { StatCard } from "@/components/StatCard";
 import {
+  AllocationDonut,
+  AllocationLegend,
+  type AllocationSlice,
+} from "@/components/AllocationDonut";
+import { PortfolioBars, type PortfolioBar } from "@/components/PortfolioBars";
+import {
   LayersIcon,
   PlusIcon,
   PortfolioIcon,
@@ -79,9 +85,11 @@ export default function DashboardPage() {
     );
   }
 
+  // Agregados
   const totalPortfolios = portfolios.length;
   const realCount = portfolios.filter((p) => p.type === "real").length;
   const simulatedCount = totalPortfolios - realCount;
+
   const allInvestments = portfolios.flatMap((p) => p.investments);
   const totalHoldings = allInvestments.length;
   const totalInvested = allInvestments.reduce(
@@ -89,39 +97,104 @@ export default function DashboardPage() {
     0,
   );
 
-  const assetTypeCounts = allInvestments.reduce<Record<string, number>>(
+  // Alocação por classe de ativo (em valor investido)
+  const allocByType = allInvestments.reduce<Record<string, number>>(
     (acc, inv) => {
-      acc[inv.asset_type] = (acc[inv.asset_type] ?? 0) + 1;
+      acc[inv.asset_type] =
+        (acc[inv.asset_type] ?? 0) + (Number(inv.amount_invested) || 0);
       return acc;
     },
     {},
   );
+  const allocSlices: AllocationSlice[] = Object.entries(allocByType)
+    .map(([asset_type, value]) => ({ asset_type, value }))
+    .sort((a, b) => b.value - a.value);
+
+  // Barras: total investido por portfolio
+  const portfolioBars: PortfolioBar[] = portfolios
+    .map((p) => ({
+      name: p.name,
+      total: p.investments.reduce(
+        (s, i) => s + (Number(i.amount_invested) || 0),
+        0,
+      ),
+      type: p.type,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const avgPerHolding =
+    totalHoldings === 0 ? 0 : totalInvested / totalHoldings;
 
   const recent = [...portfolios]
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 3);
 
   const firstName = user?.name?.split(" ")[0] ?? "investidor";
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return "Bom dia";
+    if (h < 18) return "Boa tarde";
+    return "Boa noite";
+  })();
 
   return (
     <Stack gap="6">
-      <Flex justify="space-between" align="end" wrap="wrap" gap="4">
-        <Box>
-          <Heading size="xl" color="white">
-            Olá, {firstName}
-          </Heading>
-          <Text color="gray.400" mt="1">
-            Resumo das suas carteiras reais e simuladas
-          </Text>
-        </Box>
-        <NextLink href="/dashboard/portfolios/new">
-          <Button colorPalette="blue">
-            <PlusIcon size={16} />
-            <Text ml="2">Novo portfólio</Text>
-          </Button>
-        </NextLink>
-      </Flex>
+      {/* Hero gradiente: greeting + total destacado + CTA */}
+      <Box
+        position="relative"
+        overflow="hidden"
+        borderRadius="xl"
+        border="1px solid"
+        borderColor="gray.700"
+        bg="gray.800"
+        style={{ background: "linear-gradient(135deg, rgba(14,165,233,0.22) 0%, rgba(168,85,247,0.14) 60%, #1f2937 100%)" }}
+        p={{ base: "6", md: "8" }}
+      >
+        <Box
+          position="absolute"
+          top="-40px"
+          right="-40px"
+          w="240px"
+          h="240px"
+          borderRadius="full"
+          style={{ background: "radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)" }}
+          pointerEvents="none"
+        />
+        <Flex
+          direction={{ base: "column", md: "row" }}
+          align={{ base: "start", md: "end" }}
+          justify="space-between"
+          gap="6"
+          position="relative"
+        >
+          <Box>
+            <Text fontSize="sm" color="brand.300" fontWeight="medium" mb="1">
+              {greeting}, {firstName} 👋
+            </Text>
+            <Heading size="xl" color="white" lineHeight="1.1" mb="3">
+              {formatBRL(totalInvested)}
+            </Heading>
+            <Text color="gray.400" fontSize="sm" maxW="md">
+              Capital total investido em {totalPortfolios} portfolio
+              {totalPortfolios === 1 ? "" : "s"} ({realCount} real
+              {realCount === 1 ? "" : "is"}
+              {simulatedCount > 0
+                ? ` · ${simulatedCount} simulado${simulatedCount === 1 ? "" : "s"}`
+                : ""}
+              ) distribuídos em {totalHoldings} posição
+              {totalHoldings === 1 ? "" : "ões"}.
+            </Text>
+          </Box>
+          <NextLink href="/dashboard/portfolios/new">
+            <Button colorPalette="blue" size="md">
+              <PlusIcon size={16} />
+              <Text ml="2">Novo portfólio</Text>
+            </Button>
+          </NextLink>
+        </Flex>
+      </Box>
 
+      {/* Stat cards */}
       <SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} gap="4">
         <StatCard
           label="Portfólios"
@@ -129,13 +202,6 @@ export default function DashboardPage() {
           helper={`${realCount} reais · ${simulatedCount} simulados`}
           icon={<PortfolioIcon size={16} />}
           accent="brand"
-        />
-        <StatCard
-          label="Total investido"
-          value={formatBRL(totalInvested)}
-          helper="Soma de todos os investimentos"
-          icon={<WalletIcon size={16} />}
-          accent="gain"
         />
         <StatCard
           label="Posições"
@@ -150,17 +216,81 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Classes de ativo"
-          value={Object.keys(assetTypeCounts).length || 0}
+          value={Object.keys(allocByType).length || 0}
           helper={
-            Object.entries(assetTypeCounts)
-              .map(([k, v]) => `${k} ${v}`)
-              .join(" · ") || "—"
+            allocSlices.map((s) => s.asset_type).join(" · ") || "—"
           }
           icon={<TrendingUpIcon size={16} />}
+          accent="gain"
+        />
+        <StatCard
+          label="Ticket médio"
+          value={formatBRL(avgPerHolding)}
+          helper="Valor médio por posição"
+          icon={<WalletIcon size={16} />}
           accent="gray"
         />
       </SimpleGrid>
 
+      {/* Charts row */}
+      <SimpleGrid columns={{ base: 1, lg: 2 }} gap="4">
+        <Box
+          bg="gray.800"
+          border="1px solid"
+          borderColor="gray.700"
+          borderRadius="lg"
+          p="6"
+        >
+          <Flex justify="space-between" align="start" mb="4">
+            <Box>
+              <Heading size="sm" color="white">
+                Alocação por classe
+              </Heading>
+              <Text fontSize="xs" color="gray.500" mt="1">
+                Distribuição do total investido
+              </Text>
+            </Box>
+          </Flex>
+          <AllocationDonut data={allocSlices} total={totalInvested} />
+          {allocSlices.length > 0 && (
+            <Box mt="4" pt="4" borderTop="1px solid" borderColor="gray.700">
+              <AllocationLegend data={allocSlices} />
+            </Box>
+          )}
+        </Box>
+
+        <Box
+          bg="gray.800"
+          border="1px solid"
+          borderColor="gray.700"
+          borderRadius="lg"
+          p="6"
+        >
+          <Flex justify="space-between" align="start" mb="4">
+            <Box>
+              <Heading size="sm" color="white">
+                Total por portfolio
+              </Heading>
+              <Text fontSize="xs" color="gray.500" mt="1">
+                Comparativo entre carteiras
+              </Text>
+            </Box>
+            <HStack gap="3" fontSize="xs">
+              <Flex align="center" gap="1">
+                <Box w="8px" h="8px" borderRadius="sm" bg="#0ea5e9" />
+                <Text color="gray.400">real</Text>
+              </Flex>
+              <Flex align="center" gap="1">
+                <Box w="8px" h="8px" borderRadius="sm" bg="#a855f7" />
+                <Text color="gray.400">simulado</Text>
+              </Flex>
+            </HStack>
+          </Flex>
+          <PortfolioBars data={portfolioBars} />
+        </Box>
+      </SimpleGrid>
+
+      {/* Recent portfolios */}
       <Box>
         <Flex justify="space-between" align="center" mb="4">
           <Heading size="md" color="white">
@@ -213,7 +343,7 @@ export default function DashboardPage() {
                     bg="gray.800"
                     border="1px solid"
                     borderColor="gray.700"
-                    borderRadius="md"
+                    borderRadius="lg"
                     overflow="hidden"
                   >
                     <Box className={`accent-bar ${p.type}`} />
@@ -230,23 +360,32 @@ export default function DashboardPage() {
                           {p.type}
                         </Badge>
                       </Flex>
-                      <HStack gap="4" fontSize="xs" color="gray.400" mb="3">
+                      <Text fontSize="xs" color="gray.500" mb="2">
+                        Valor investido
+                      </Text>
+                      <Heading size="md" color="white" mb="3">
+                        {formatBRL(invested)}
+                      </Heading>
+                      <HStack
+                        gap="3"
+                        fontSize="xs"
+                        color="gray.400"
+                        borderTop="1px solid"
+                        borderColor="gray.700"
+                        pt="3"
+                      >
                         <Text>
                           <Text as="span" color="white" fontWeight="bold">
                             {p.investments.length}
                           </Text>{" "}
                           posições
                         </Text>
+                        <Text color="gray.600">·</Text>
                         <Text>
-                          <Text as="span" color="gain" fontWeight="bold">
-                            {formatBRL(invested)}
-                          </Text>
+                          Criado em{" "}
+                          {new Date(p.created_at).toLocaleDateString("pt-BR")}
                         </Text>
                       </HStack>
-                      <Text fontSize="xs" color="gray.500">
-                        Criado em{" "}
-                        {new Date(p.created_at).toLocaleDateString("pt-BR")}
-                      </Text>
                     </Box>
                   </Box>
                 </NextLink>

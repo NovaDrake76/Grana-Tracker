@@ -31,14 +31,17 @@ import type {
   PortfolioWithInvestments,
   ApiResponse,
 } from "@/types";
-import { StatCard } from "@/components/StatCard";
 import {
-  LayersIcon,
+  AllocationDonut,
+  AllocationLegend,
+  ASSET_COLORS,
+  ASSET_LABEL,
+  type AllocationSlice,
+} from "@/components/AllocationDonut";
+import {
   PencilIcon,
   PlusIcon,
   TrashIcon,
-  WalletIcon,
-  TrendingUpIcon,
 } from "@/components/Icons";
 
 const ASSET_TYPES: AssetType[] = ["stock", "crypto", "etf", "index"];
@@ -68,13 +71,6 @@ function formatQuantity(value: string | null) {
   if (Number.isNaN(n)) return value;
   return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
 }
-
-const assetTypeColor: Record<AssetType, string> = {
-  stock: "blue",
-  crypto: "orange",
-  etf: "purple",
-  index: "green",
-};
 
 export default function PortfolioDetailPage({
   params,
@@ -207,18 +203,26 @@ export default function PortfolioDetailPage({
     0,
   );
   const holdings = portfolio.investments.length;
-  const assetBreakdown = portfolio.investments.reduce<Record<string, number>>(
+  const isReal = portfolio.type === "real";
+
+  // Alocação por classe de ativo deste portfolio
+  const allocByType = portfolio.investments.reduce<Record<string, number>>(
     (acc, i) => {
-      acc[i.asset_type] = (acc[i.asset_type] ?? 0) + 1;
+      acc[i.asset_type] =
+        (acc[i.asset_type] ?? 0) + (Number(i.amount_invested) || 0);
       return acc;
     },
     {},
   );
-  const topAssetType = Object.entries(assetBreakdown).sort(
-    (a, b) => b[1] - a[1],
-  )[0];
+  const allocSlices: AllocationSlice[] = Object.entries(allocByType)
+    .map(([asset_type, value]) => ({ asset_type, value }))
+    .sort((a, b) => b.value - a.value);
 
-  const isReal = portfolio.type === "real";
+  // Gradiente do hero por tipo: real=brand cyan, simulado=violeta
+  const heroGradient = isReal
+    ? "linear-gradient(135deg, rgba(14,165,233,0.28) 0%, rgba(14,165,233,0.10) 50%, #1f2937 100%)"
+    : "linear-gradient(135deg, rgba(168,85,247,0.28) 0%, rgba(168,85,247,0.10) 50%, #1f2937 100%)";
+  const heroGlow = isReal ? "rgba(14,165,233,0.32)" : "rgba(168,85,247,0.32)";
 
   return (
     <Stack gap="6">
@@ -233,72 +237,141 @@ export default function PortfolioDetailPage({
         </Text>
       </NextLink>
 
-      <Flex justify="space-between" align="end" wrap="wrap" gap="4">
-        <Box>
-          <HStack mb="2">
-            <Heading size="xl" color="white">
+      {/* Hero card */}
+      <Box
+        position="relative"
+        overflow="hidden"
+        borderRadius="xl"
+        border="1px solid"
+        borderColor="gray.700"
+        bg="gray.800"
+        style={{ background: heroGradient }}
+        p={{ base: "6", md: "8" }}
+      >
+        <Box
+          position="absolute"
+          top="-50px"
+          right="-50px"
+          w="280px"
+          h="280px"
+          borderRadius="full"
+          style={{ background: `radial-gradient(circle, ${heroGlow} 0%, transparent 70%)` }}
+          pointerEvents="none"
+        />
+        <Flex
+          direction={{ base: "column", md: "row" }}
+          align={{ base: "start", md: "end" }}
+          justify="space-between"
+          gap="6"
+          position="relative"
+        >
+          <Box>
+            <HStack mb="3">
+              <Badge
+                colorPalette={isReal ? "blue" : "purple"}
+                variant={isReal ? "solid" : "outline"}
+                size="md"
+              >
+                {portfolio.type}
+              </Badge>
+              <Text fontSize="xs" color="gray.400">
+                Criado em{" "}
+                {new Date(portfolio.created_at).toLocaleDateString("pt-BR")}
+              </Text>
+            </HStack>
+            <Heading size="xl" color="white" lineHeight="1.1" mb="2">
               {portfolio.name}
             </Heading>
-            <Badge
-              colorPalette={isReal ? "blue" : "purple"}
-              variant={isReal ? "solid" : "outline"}
-            >
-              {portfolio.type}
-            </Badge>
-          </HStack>
-          {portfolio.description && (
-            <Text color="gray.400">{portfolio.description}</Text>
-          )}
-          <Text fontSize="xs" color="gray.500" mt="2">
-            Criado em{" "}
-            {new Date(portfolio.created_at).toLocaleDateString("pt-BR")}
-          </Text>
+            {portfolio.description && (
+              <Text color="gray.400" fontSize="sm" maxW="md">
+                {portfolio.description}
+              </Text>
+            )}
+          </Box>
+          <NextLink href={`/dashboard/portfolios/${portfolio.id}/edit`}>
+            <Button size="sm" variant="outline">
+              <PencilIcon size={14} />
+              <Text ml="2">Editar</Text>
+            </Button>
+          </NextLink>
+        </Flex>
+
+        <Box
+          position="relative"
+          mt="6"
+          pt="6"
+          borderTop="1px solid"
+          borderColor="rgba(255,255,255,0.08)"
+        >
+          <SimpleGrid columns={{ base: 2, md: 4 }} gap="6">
+            <Box>
+              <Text fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="0.05em">
+                Total investido
+              </Text>
+              <Heading size="lg" color="white" mt="1">
+                {formatBRL(totalInvested)}
+              </Heading>
+            </Box>
+            <Box>
+              <Text fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="0.05em">
+                Posições
+              </Text>
+              <Heading size="lg" color="white" mt="1">
+                {holdings}
+              </Heading>
+            </Box>
+            <Box>
+              <Text fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="0.05em">
+                Classes
+              </Text>
+              <Heading size="lg" color="white" mt="1">
+                {Object.keys(allocByType).length}
+              </Heading>
+            </Box>
+            <Box>
+              <Text fontSize="xs" color="gray.400" textTransform="uppercase" letterSpacing="0.05em">
+                Ticket médio
+              </Text>
+              <Heading size="lg" color="white" mt="1">
+                {formatBRL(holdings === 0 ? 0 : totalInvested / holdings)}
+              </Heading>
+            </Box>
+          </SimpleGrid>
         </Box>
-        <NextLink href={`/dashboard/portfolios/${portfolio.id}/edit`}>
-          <Button size="sm" variant="outline">
-            <PencilIcon size={14} />
-            <Text ml="2">Editar</Text>
-          </Button>
-        </NextLink>
-      </Flex>
+      </Box>
 
-      <SimpleGrid columns={{ base: 1, sm: 3 }} gap="4">
-        <StatCard
-          label="Total investido"
-          value={formatBRL(totalInvested)}
-          helper={`${holdings} posição${holdings === 1 ? "" : "ões"}`}
-          icon={<WalletIcon size={16} />}
-          accent="gain"
-        />
-        <StatCard
-          label="Posições"
-          value={holdings}
-          helper={
-            holdings === 0
-              ? "Nenhuma ainda"
-              : `${Object.keys(assetBreakdown).length} classe${Object.keys(assetBreakdown).length === 1 ? "" : "s"} de ativo`
-          }
-          icon={<LayersIcon size={16} />}
-          accent="brand"
-        />
-        <StatCard
-          label="Classe principal"
-          value={topAssetType ? topAssetType[0] : "—"}
-          helper={
-            topAssetType
-              ? `${topAssetType[1]} posição${topAssetType[1] === 1 ? "" : "ões"}`
-              : "Adicione um investimento"
-          }
-          icon={<TrendingUpIcon size={16} />}
-          accent="purple"
-        />
-      </SimpleGrid>
+      {/* Allocation donut */}
+      {allocSlices.length > 0 && (
+        <Box
+          bg="gray.800"
+          border="1px solid"
+          borderColor="gray.700"
+          borderRadius="lg"
+          p="6"
+        >
+          <Flex justify="space-between" align="start" mb="4">
+            <Box>
+              <Heading size="sm" color="white">
+                Alocação deste portfolio
+              </Heading>
+              <Text fontSize="xs" color="gray.500" mt="1">
+                Distribuição por classe de ativo
+              </Text>
+            </Box>
+          </Flex>
+          <SimpleGrid columns={{ base: 1, md: 2 }} gap="6" alignItems="center">
+            <AllocationDonut data={allocSlices} total={totalInvested} />
+            <AllocationLegend data={allocSlices} />
+          </SimpleGrid>
+        </Box>
+      )}
 
+      {/* Add investment form */}
       <Box
         bg="gray.800"
         border="1px solid"
         borderColor="gray.700"
-        borderRadius="md"
+        borderRadius="lg"
         overflow="hidden"
       >
         <Box px="5" py="4" borderBottom="1px solid" borderColor="gray.700">
@@ -329,7 +402,7 @@ export default function PortfolioDetailPage({
                   >
                     {ASSET_TYPES.map((t) => (
                       <option key={t} value={t}>
-                        {t}
+                        {ASSET_LABEL[t] ?? t}
                       </option>
                     ))}
                   </NativeSelectField>
@@ -384,11 +457,12 @@ export default function PortfolioDetailPage({
         </Box>
       </Box>
 
+      {/* Investments table */}
       <Box
         bg="gray.800"
         border="1px solid"
         borderColor="gray.700"
-        borderRadius="md"
+        borderRadius="lg"
         overflow="hidden"
       >
         <Flex
@@ -399,9 +473,14 @@ export default function PortfolioDetailPage({
           borderBottom="1px solid"
           borderColor="gray.700"
         >
-          <Heading size="sm" color="white">
-            Investimentos
-          </Heading>
+          <Box>
+            <Heading size="sm" color="white">
+              Investimentos
+            </Heading>
+            <Text fontSize="xs" color="gray.500" mt="1">
+              Posições ordenadas por data de compra
+            </Text>
+          </Box>
           <Badge variant="subtle" colorPalette="gray">
             {portfolio.investments.length}
           </Badge>
@@ -430,16 +509,20 @@ export default function PortfolioDetailPage({
                 {portfolio.investments.map((inv) => (
                   <Table.Row key={inv.id}>
                     <Table.Cell fontWeight="bold" color="white">
-                      {inv.ticker}
+                      <Flex align="center" gap="2">
+                        <Box
+                          w="8px"
+                          h="8px"
+                          borderRadius="full"
+                          bg={ASSET_COLORS[inv.asset_type] ?? "#6b7280"}
+                        />
+                        {inv.ticker}
+                      </Flex>
                     </Table.Cell>
                     <Table.Cell>
-                      <Badge
-                        size="sm"
-                        variant="subtle"
-                        colorPalette={assetTypeColor[inv.asset_type]}
-                      >
-                        {inv.asset_type}
-                      </Badge>
+                      <Text fontSize="xs" color="gray.300">
+                        {ASSET_LABEL[inv.asset_type] ?? inv.asset_type}
+                      </Text>
                     </Table.Cell>
                     <Table.Cell color="gain" fontWeight="bold">
                       {formatAmount(inv.amount_invested)}
