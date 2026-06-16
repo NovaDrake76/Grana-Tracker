@@ -1,6 +1,7 @@
 package services
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -117,5 +118,59 @@ func TestValidateTokenRejectsExpired(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "expired") {
 		t.Fatalf("expected expiry error, got: %v", err)
+	}
+}
+
+// TestHashRefreshToken pins the contract of HashRefreshToken: deterministic,
+// collision-resistant (different inputs differ), 64 lowercase hex chars
+// (SHA-256), and stable on the empty string. Storing only this hash means a
+// database leak cannot be replayed against the refresh endpoint.
+func TestHashRefreshToken(t *testing.T) {
+	t.Run("deterministic", func(t *testing.T) {
+		if HashRefreshToken("abc") != HashRefreshToken("abc") {
+			t.Fatal("HashRefreshToken is not deterministic for the same input")
+		}
+	})
+
+	t.Run("different_inputs_differ", func(t *testing.T) {
+		if HashRefreshToken("abc") == HashRefreshToken("abd") {
+			t.Fatal("HashRefreshToken collided on trivially different inputs")
+		}
+	})
+
+	t.Run("length_and_format", func(t *testing.T) {
+		got := HashRefreshToken("any-input")
+		if len(got) != 64 {
+			t.Fatalf("expected 64-char hex digest, got %d chars: %q", len(got), got)
+		}
+		hexRe := regexp.MustCompile(`^[0-9a-f]{64}$`)
+		if !hexRe.MatchString(got) {
+			t.Fatalf("digest is not 64 lowercase hex chars: %q", got)
+		}
+	})
+
+	t.Run("empty_input", func(t *testing.T) {
+		// SHA-256 of the empty string is a well-known constant.
+		const emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		if got := HashRefreshToken(""); got != emptySHA256 {
+			t.Fatalf("HashRefreshToken(\"\") = %q, want %q", got, emptySHA256)
+		}
+	})
+}
+
+// TestRefreshTokenExpiry pins both the helper and the constant. The constant
+// must be exactly 7 days so the rotation policy on the refresh endpoint
+// matches the documented OWASP-aligned threat model.
+func TestRefreshTokenExpiry(t *testing.T) {
+	if RefreshTokenTTL != 7*24*time.Hour {
+		t.Fatalf("RefreshTokenTTL drifted: got %v, want %v", RefreshTokenTTL, 7*24*time.Hour)
+	}
+
+	want := time.Now().Add(RefreshTokenTTL)
+	got := RefreshTokenExpiry()
+
+	diff := got.Sub(want)
+	if diff < -5*time.Second || diff > 5*time.Second {
+		t.Fatalf("RefreshTokenExpiry off by %v (got %v, want ~%v)", diff, got, want)
 	}
 }
