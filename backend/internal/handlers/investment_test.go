@@ -26,7 +26,7 @@ type portfolioWithInvestmentsDTO struct {
 func setupOnePortfolio(t *testing.T, email string) (token string, portfolioID string) {
 	t.Helper()
 	r := newTestRouter(t)
-	token = registerUser(t, r, email, "hunter2")
+	token = registerUser(t, r, email, "hunter22")
 	_, resp := doRequest(t, r, http.MethodPost, "/api/portfolios", token, map[string]string{
 		"name": "Test PF",
 		"type": "real",
@@ -43,7 +43,7 @@ func TestInvestmentCRUD(t *testing.T) {
 	truncateAll(t)
 
 	r := newTestRouter(t)
-	token := registerUser(t, r, "inv-crud@example.com", "hunter2")
+	token := registerUser(t, r, "inv-crud@example.com", "hunter22")
 
 	// create a portfolio to host the investment
 	_, resp := doRequest(t, r, http.MethodPost, "/api/portfolios", token, map[string]string{
@@ -139,7 +139,7 @@ func TestPortfolioGetEmbedsInvestments(t *testing.T) {
 	truncateAll(t)
 
 	r := newTestRouter(t)
-	token := registerUser(t, r, "inv-embed@example.com", "hunter2")
+	token := registerUser(t, r, "inv-embed@example.com", "hunter22")
 
 	_, resp := doRequest(t, r, http.MethodPost, "/api/portfolios", token, map[string]string{
 		"name": "Crypto",
@@ -200,7 +200,7 @@ func TestInvestmentOwnershipIsolation(t *testing.T) {
 
 	r := newTestRouter(t)
 	aliceToken, alicePF := setupOnePortfolio(t, "inv-iso-alice@example.com")
-	bobToken := registerUser(t, r, "inv-iso-bob@example.com", "hunter2")
+	bobToken := registerUser(t, r, "inv-iso-bob@example.com", "hunter22")
 
 	// alice creates investment
 	_, resp := doRequest(t, r, http.MethodPost, "/api/portfolios/"+alicePF+"/investments", aliceToken, map[string]interface{}{

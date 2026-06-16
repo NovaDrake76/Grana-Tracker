@@ -22,7 +22,7 @@ func TestGetMeReturnsProfile(t *testing.T) {
 	truncateAll(t)
 	r := newTestRouter(t)
 
-	token := registerUser(t, r, "profile@example.com", "hunter2")
+	token := registerUser(t, r, "profile@example.com", "hunter22")
 
 	rr, resp := doRequest(t, r, http.MethodGet, "/api/user/me", token, nil)
 	if rr.Code != http.StatusOK {
@@ -48,7 +48,7 @@ func TestUpdateMePersistsChanges(t *testing.T) {
 	truncateAll(t)
 	r := newTestRouter(t)
 
-	token := registerUser(t, r, "update@example.com", "hunter2")
+	token := registerUser(t, r, "update@example.com", "hunter22")
 
 	newName := "Updated Name"
 	newCurrency := "USD"

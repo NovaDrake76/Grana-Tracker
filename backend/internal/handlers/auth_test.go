@@ -19,7 +19,7 @@ func TestRegisterHappyPath(t *testing.T) {
 	rr, resp := doRequest(t, r, http.MethodPost, "/api/auth/register", "", map[string]string{
 		"name":     "Alice",
 		"email":    "alice@example.com",
-		"password": "hunter2",
+		"password": "hunter22",
 	})
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201, body %s", rr.Code, rr.Body.String())
@@ -41,12 +41,12 @@ func TestRegisterDuplicateEmail(t *testing.T) {
 	truncateAll(t)
 	r := newTestRouter(t)
 
-	registerUser(t, r, "dup@example.com", "hunter2")
+	registerUser(t, r, "dup@example.com", "hunter22")
 
 	rr, resp := doRequest(t, r, http.MethodPost, "/api/auth/register", "", map[string]string{
 		"name":     "Bob",
 		"email":    "dup@example.com",
-		"password": "hunter3",
+		"password": "hunter33",
 	})
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", rr.Code)
@@ -65,7 +65,7 @@ func TestRegisterValidation(t *testing.T) {
 		name string
 		body map[string]string
 	}{
-		{"missing email", map[string]string{"name": "A", "password": "hunter2"}},
+		{"missing email", map[string]string{"name": "A", "password": "hunter22"}},
 		{"missing password", map[string]string{"name": "A", "email": "a@b.com"}},
 		{"short password", map[string]string{"name": "A", "email": "a@b.com", "password": "x"}},
 	}
@@ -87,12 +87,12 @@ func TestLoginFlow(t *testing.T) {
 	truncateAll(t)
 	r := newTestRouter(t)
 
-	registerUser(t, r, "login@example.com", "hunter2")
+	registerUser(t, r, "login@example.com", "hunter22")
 
 	t.Run("valid creds", func(t *testing.T) {
 		rr, _ := doRequest(t, r, http.MethodPost, "/api/auth/login", "", map[string]string{
 			"email":    "login@example.com",
-			"password": "hunter2",
+			"password": "hunter22",
 		})
 		if rr.Code != http.StatusOK {
 			t.Errorf("status = %d, want 200", rr.Code)
@@ -112,7 +112,7 @@ func TestLoginFlow(t *testing.T) {
 	t.Run("unknown email", func(t *testing.T) {
 		rr, _ := doRequest(t, r, http.MethodPost, "/api/auth/login", "", map[string]string{
 			"email":    "ghost@example.com",
-			"password": "hunter2",
+			"password": "hunter22",
 		})
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("status = %d, want 401", rr.Code)
@@ -125,11 +125,11 @@ func TestRefreshFlow(t *testing.T) {
 	truncateAll(t)
 	r := newTestRouter(t)
 
-	registerUser(t, r, "refresh@example.com", "hunter2")
+	registerUser(t, r, "refresh@example.com", "hunter22")
 
 	rr, resp := doRequest(t, r, http.MethodPost, "/api/auth/login", "", map[string]string{
 		"email":    "refresh@example.com",
-		"password": "hunter2",
+		"password": "hunter22",
 	})
 	if rr.Code != http.StatusOK {
 		t.Fatalf("login failed: %d", rr.Code)
@@ -182,10 +182,10 @@ func TestRefreshFlow(t *testing.T) {
 // between subtests.
 func loginFresh(t *testing.T, r chi.Router, email string) (string, string) {
 	t.Helper()
-	registerUser(t, r, email, "hunter2")
+	registerUser(t, r, email, "hunter22")
 	rr, resp := doRequest(t, r, http.MethodPost, "/api/auth/login", "", map[string]string{
 		"email":    email,
-		"password": "hunter2",
+		"password": "hunter22",
 	})
 	if rr.Code != http.StatusOK {
 		t.Fatalf("login failed: %d body %s", rr.Code, rr.Body.String())
@@ -233,7 +233,7 @@ func TestAuthRateLimit(t *testing.T) {
 
 	body, err := json.Marshal(map[string]string{
 		"email":    "ratelimit@example.com",
-		"password": "hunter2",
+		"password": "hunter22",
 	})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -256,6 +256,40 @@ func TestAuthRateLimit(t *testing.T) {
 	}
 }
 
+// TestRegisterRejectsBadEmail asserts the email-format check fires before
+// the password rule, so obvious garbage like "not-an-email" never even hits
+// bcrypt or the users insert (defence-in-depth + fewer 500s from DB rejects).
+func TestRegisterRejectsBadEmail(t *testing.T) {
+	requireDB(t)
+	truncateAll(t)
+	r := newTestRouter(t)
+
+	cases := []struct {
+		name  string
+		email string
+	}{
+		{"no at-sign", "not-an-email"},
+		{"no dot", "user@localhost"},
+		{"whitespace", "white space@example.com"},
+		{"double at", "a@@b.com"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rr, resp := doRequest(t, r, http.MethodPost, "/api/auth/register", "", map[string]string{
+				"name":     "Bad",
+				"email":    c.email,
+				"password": "hunter22",
+			})
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400, body %s", rr.Code, rr.Body.String())
+			}
+			if resp.Code != "VALIDATION_ERROR" {
+				t.Errorf("code = %q, want VALIDATION_ERROR", resp.Code)
+			}
+		})
+	}
+}
+
 // TestRegisterRejectsUnknownFields confirms DisallowUnknownFields is wired
 // into decodeJSON: posting an extra "role" field must yield 400 with a
 // VALIDATION_ERROR code rather than silently accepting a privilege
@@ -268,7 +302,7 @@ func TestRegisterRejectsUnknownFields(t *testing.T) {
 	rr, resp := doRequest(t, r, http.MethodPost, "/api/auth/register", "", map[string]interface{}{
 		"name":     "Mallory",
 		"email":    "mallory@example.com",
-		"password": "hunter2",
+		"password": "hunter22",
 		"role":     "admin",
 	})
 	if rr.Code != http.StatusBadRequest {

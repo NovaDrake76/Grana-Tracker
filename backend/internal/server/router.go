@@ -43,6 +43,13 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
+			// RealIP rewrites RemoteAddr from X-Real-IP / X-Forwarded-For so the
+			// rate limiter buckets clients by their true source IP and not by
+			// the reverse proxy's IP. Assumes the reverse proxy strips inbound
+			// X-Forwarded-For from clients and sets its own — without that
+			// hardening at the proxy, clients could spoof the header and dodge
+			// the per-IP cap.
+			r.Use(chimw.RealIP)
 			// OWASP A07 (Identification & Authentication Failures): cap each
 			// IP to 10 auth requests per minute to slow brute-force / credential
 			// stuffing attacks against /register, /login, and /refresh.

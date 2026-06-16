@@ -18,7 +18,7 @@ func TestPortfolioCRUD(t *testing.T) {
 	truncateAll(t)
 	r := newTestRouter(t)
 
-	token := registerUser(t, r, "pf-crud@example.com", "hunter2")
+	token := registerUser(t, r, "pf-crud@example.com", "hunter22")
 
 	// create
 	rr, resp := doRequest(t, r, http.MethodPost, "/api/portfolios", token, map[string]string{
@@ -95,8 +95,8 @@ func TestPortfolioOwnershipIsolation(t *testing.T) {
 	truncateAll(t)
 	r := newTestRouter(t)
 
-	aliceToken := registerUser(t, r, "alice@example.com", "hunter2")
-	bobToken := registerUser(t, r, "bob@example.com", "hunter2")
+	aliceToken := registerUser(t, r, "alice@example.com", "hunter22")
+	bobToken := registerUser(t, r, "bob@example.com", "hunter22")
 
 	// alice creates a portfolio
 	_, resp := doRequest(t, r, http.MethodPost, "/api/portfolios", aliceToken, map[string]string{
@@ -147,7 +147,7 @@ func TestPortfolioValidation(t *testing.T) {
 	truncateAll(t)
 	r := newTestRouter(t)
 
-	token := registerUser(t, r, "pf-val@example.com", "hunter2")
+	token := registerUser(t, r, "pf-val@example.com", "hunter22")
 
 	t.Run("missing name", func(t *testing.T) {
 		rr, _ := doRequest(t, r, http.MethodPost, "/api/portfolios", token, map[string]string{

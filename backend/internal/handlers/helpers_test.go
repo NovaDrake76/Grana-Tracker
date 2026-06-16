@@ -3,8 +3,11 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestWriteJSON(t *testing.T) {
@@ -48,14 +51,19 @@ func TestWriteError(t *testing.T) {
 }
 
 func TestIsDuplicateKeyError(t *testing.T) {
+	uniqueViolation := &pgconn.PgError{Code: "23505", Message: "duplicate key value violates unique constraint"}
+	otherPg := &pgconn.PgError{Code: "23503", Message: "foreign key violation"}
+
 	cases := []struct {
 		name string
 		err  error
 		want bool
 	}{
-		{"duplicate key phrase", errors.New("ERROR: duplicate key value violates unique constraint"), true},
-		{"23505 code", errors.New("pq: SQLSTATE 23505"), true},
-		{"random error", errors.New("timeout connecting to DB"), false},
+		{"real pg 23505", uniqueViolation, true},
+		{"real pg 23505 wrapped", fmt.Errorf("create user: %w", uniqueViolation), true},
+		{"other pg code", otherPg, false},
+		{"generic error", errors.New("timeout connecting to DB"), false},
+		{"nil error", nil, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -27,11 +27,14 @@ func TestSecurityHeadersSetsAllHeaders(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"X-Content-Type-Options":    "nosniff",
-		"X-Frame-Options":           "DENY",
-		"Referrer-Policy":           "no-referrer",
-		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-		"Content-Security-Policy":   "default-src 'self'",
+		"X-Content-Type-Options":       "nosniff",
+		"X-Frame-Options":              "DENY",
+		"Referrer-Policy":              "no-referrer",
+		"Strict-Transport-Security":    "max-age=31536000; includeSubDomains",
+		"Content-Security-Policy":      "default-src 'self'",
+		"Permissions-Policy":           "geolocation=(), microphone=(), camera=()",
+		"Cross-Origin-Opener-Policy":   "same-origin",
+		"Cross-Origin-Resource-Policy": "same-origin",
 	}
 	for header, expected := range want {
 		got := rr.Header().Get(header)

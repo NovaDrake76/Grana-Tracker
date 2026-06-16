@@ -18,7 +18,9 @@ import (
 )
 
 func main() {
-	godotenv.Load()
+	if err := godotenv.Load(); err != nil {
+		log.Printf("godotenv: %v (continuing — .env is optional)", err)
+	}
 
 	dbURL := os.Getenv("DATABASE_URL")
 	jwtSecret := os.Getenv("JWT_SECRET")
@@ -36,6 +38,7 @@ func main() {
 	}
 	if frontendURL == "" {
 		frontendURL = "http://localhost:3000"
+		log.Printf("WARN: FRONTEND_URL not set, defaulting to http://localhost:3000 with AllowCredentials=true; do NOT use this default in production")
 	}
 
 	ctx := context.Background()
@@ -55,8 +58,12 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", port),
-		Handler: server.NewRouter(pool, jwtSecret, frontendURL),
+		Addr:              fmt.Sprintf(":%s", port),
+		Handler:           server.NewRouter(pool, jwtSecret, frontendURL),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {

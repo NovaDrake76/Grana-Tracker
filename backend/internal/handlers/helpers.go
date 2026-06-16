@@ -2,19 +2,23 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("writeJSON: %v", err)
+	}
 }
 
 // decodeJSON decodes the request body into dst with DisallowUnknownFields set
@@ -33,9 +37,19 @@ func writeError(w http.ResponseWriter, status int, message, code string) {
 	})
 }
 
-// detects postgres unique-violation errors so we can return 409 instead of 500.
+// detects postgres unique-violation errors (SQLSTATE 23505) so we can return
+// 409 instead of 500. Uses errors.As against *pgconn.PgError rather than
+// substring matching the error text so we don't break on driver locale or
+// minor wording changes.
 func isDuplicateKeyError(err error) bool {
-	return strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "23505")
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
 }
 
 func uuidFromBytes(b [16]byte) uuid.UUID {

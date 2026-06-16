@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +16,24 @@ import (
 	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/services"
 )
+
+// dummyHash is a precomputed bcrypt hash burned at startup so the Login path
+// can spend equivalent CPU on unknown emails (defeats user-enumeration via
+// response-time side channel).
+var dummyHash string
+
+// emailRegex is a permissive but real-shaped email check (local@domain.tld
+// with no whitespace or extra @). Cheap to evaluate, catches obvious garbage.
+var emailRegex = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+
+func init() {
+	h, err := services.HashPassword("dummy-password-for-timing-equalisation")
+	if err != nil {
+		log.Printf("init dummyHash: %v", err)
+		return
+	}
+	dummyHash = h
+}
 
 type AuthHandler struct {
 	Queries *sqlc.Queries
@@ -53,8 +73,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Password) < 6 {
-		writeError(w, http.StatusBadRequest, "password must be at least 6 characters", "VALIDATION_ERROR")
+	if !emailRegex.MatchString(req.Email) {
+		writeError(w, http.StatusBadRequest, "invalid email format", "VALIDATION_ERROR")
+		return
+	}
+
+	if len(req.Password) < 8 {
+		writeError(w, http.StatusBadRequest, "password must be at least 8 characters", "VALIDATION_ERROR")
 		return
 	}
 
@@ -104,9 +129,17 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !emailRegex.MatchString(req.Email) {
+		writeError(w, http.StatusBadRequest, "invalid email format", "VALIDATION_ERROR")
+		return
+	}
+
 	user, err := h.Queries.GetUserByEmail(r.Context(), req.Email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// Burn equivalent bcrypt time so a missing-user response is not
+			// noticeably faster than a wrong-password response.
+			_ = services.CheckPassword(req.Password, dummyHash)
 			writeError(w, http.StatusUnauthorized, "invalid email or password", "AUTH_ERROR")
 			return
 		}
@@ -181,7 +214,9 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	// Expired (DB authoritative — JWT expiry alone is not enough since the
 	// refresh row could have been forcibly revoked or aged out separately).
-	if row.ExpiresAt.Valid && !row.ExpiresAt.Time.After(now) {
+	// Fail-closed: a NULL/invalid expires_at is treated as expired rather
+	// than passing through.
+	if !row.ExpiresAt.Valid || !row.ExpiresAt.Time.After(now) {
 		writeError(w, http.StatusUnauthorized, "invalid refresh token", "AUTH_ERROR")
 		return
 	}
