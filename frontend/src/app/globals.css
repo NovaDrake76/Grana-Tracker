@@ -56,3 +56,31 @@ body {
 .accent-bar.simulated {
   background: #a855f7;
 }
+
+/* dark-theme contrast for form controls. Chakra v3 inputs/textareas/selects
+   render transparent against gray.800 form cards by default, so they blend
+   into the background. Baseline gray.700 bg + gray.600 border here applies
+   to every Chakra v3 form control without touching each <Input>. Per-component
+   props (bg=, borderColor=) still win when explicitly set. */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+input[type="number"],
+input[type="search"],
+input:not([type]),
+textarea,
+select {
+  background-color: #374151; /* gray.700 */
+  border-color: #4b5563;     /* gray.600 */
+}
+input[type="text"]:hover,
+input[type="email"]:hover,
+input[type="password"]:hover,
+input[type="date"]:hover,
+input[type="number"]:hover,
+input[type="search"]:hover,
+textarea:hover,
+select:hover {
+  border-color: #6b7280; /* gray.500 */
+}
