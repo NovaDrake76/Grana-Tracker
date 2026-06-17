@@ -79,9 +79,13 @@ func truncateAll(t *testing.T) {
 }
 
 // newTestRouter builds the exact same router main.go does, against the test pool.
+// The pricing.Service returned by NewRouter is intentionally discarded; handler
+// tests that need to assert pricing behaviour build their own service via the
+// constructor.
 func newTestRouter(t *testing.T) chi.Router {
 	t.Helper()
-	return server.NewRouter(testPool, testJWTSecret, "http://localhost:3000")
+	r, _ := server.NewRouter(testPool, testJWTSecret, "http://localhost:3000")
+	return r
 }
 
 type apiResponse struct {

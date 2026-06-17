@@ -19,6 +19,24 @@ export interface Portfolio {
 
 export type AssetType = "stock" | "crypto" | "etf" | "index";
 
+export interface Asset {
+  id: string;
+  ticker: string;
+  name: string;
+  asset_type: AssetType;
+  currency: string;
+  market: string;
+  source: string;
+}
+
+export interface PriceQuote {
+  ticker: string;
+  asset_type: AssetType;
+  price: string;
+  currency: string;
+  updated_at: string;
+}
+
 export interface Investment {
   id: string;
   portfolio_id: string;

@@ -8,6 +8,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Asset struct {
+	ID         pgtype.UUID        `json:"id"`
+	Ticker     string             `json:"ticker"`
+	Name       string             `json:"name"`
+	AssetType  string             `json:"asset_type"`
+	Source     string             `json:"source"`
+	ExternalID pgtype.Text        `json:"external_id"`
+	Currency   string             `json:"currency"`
+	Market     pgtype.Text        `json:"market"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type Investment struct {
 	ID             pgtype.UUID      `json:"id"`
 	PortfolioID    pgtype.UUID      `json:"portfolio_id"`

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,12 +13,26 @@ import (
 	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/handlers"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
+	"github.com/NovaDrake76/grana-tracker/backend/internal/pricing"
 )
 
 // NewRouter wires every route and middleware in one place so main.go and
-// integration tests build the exact same HTTP surface.
-func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
+// integration tests build the exact same HTTP surface. It also returns the
+// configured pricing.Service so main.go can hold a reference for the daily
+// refresh goroutine without recreating the source adapters.
+func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *pricing.Service) {
 	queries := sqlc.New(pool)
+
+	// Build pricing service with real upstream adapters. Env vars override
+	// defaults so tests can point at httptest servers without recompiling.
+	coingeckoBase := os.Getenv("COINGECKO_BASE_URL")
+	alphaKey := os.Getenv("ALPHA_VANTAGE_API_KEY")
+	alphaBase := os.Getenv("ALPHA_VANTAGE_BASE_URL")
+	pricingSvc := pricing.NewService(
+		queries,
+		pricing.NewCoinGeckoSource(coingeckoBase),
+		pricing.NewAlphaVantageSource(alphaBase, alphaKey),
+	)
 
 	authMiddleware := middleware.NewAuthMiddleware(jwtSecret)
 	authHandler := handlers.NewAuthHandler(queries, pool, jwtSecret)
@@ -25,6 +40,7 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
 	portfolioHandler := handlers.NewPortfolioHandler(queries)
 	investmentHandler := handlers.NewInvestmentHandler(queries)
 	healthHandler := handlers.NewHealthHandler(pool)
+	assetHandler := handlers.NewAssetHandler(queries, pricingSvc)
 
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)
@@ -59,6 +75,13 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
 			r.Post("/refresh", authHandler.Refresh)
 		})
 
+		// Public asset / price endpoints — autocomplete and quote display do
+		// not require a session.
+		r.Route("/assets", func(r chi.Router) {
+			r.Get("/search", assetHandler.Search)
+		})
+		r.Get("/prices/{ticker}", assetHandler.GetPrice)
+
 		r.Group(func(r chi.Router) {
 			r.Use(authMiddleware.Authenticate)
 
@@ -81,8 +104,11 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) chi.Router {
 				r.Put("/{id}", investmentHandler.Update)
 				r.Delete("/{id}", investmentHandler.Delete)
 			})
+
+			// Mutating the cache costs upstream API quota — keep it behind auth.
+			r.Post("/prices/refresh", assetHandler.Refresh)
 		})
 	})
 
-	return r
+	return r, pricingSvc
 }

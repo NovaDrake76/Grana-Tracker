@@ -43,6 +43,8 @@ import {
   PlusIcon,
   TrashIcon,
 } from "@/components/Icons";
+import { TickerAutocomplete } from "@/components/TickerAutocomplete";
+import { PriceBadge } from "@/components/PriceBadge";
 
 const ASSET_TYPES: AssetType[] = ["stock", "crypto", "etf", "index"];
 
@@ -87,6 +89,7 @@ export default function PortfolioDetailPage({
 
   const [ticker, setTicker] = useState("");
   const [assetType, setAssetType] = useState<AssetType>("stock");
+  const [assetTypeTouched, setAssetTypeTouched] = useState(false);
   const [amountInvested, setAmountInvested] = useState("");
   const [quantity, setQuantity] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(
@@ -120,6 +123,7 @@ export default function PortfolioDetailPage({
   const resetForm = () => {
     setTicker("");
     setAssetType("stock");
+    setAssetTypeTouched(false);
     setAmountInvested("");
     setQuantity("");
     setPurchaseDate(new Date().toISOString().slice(0, 10));
@@ -387,10 +391,18 @@ export default function PortfolioDetailPage({
             <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap="4">
               <FieldRoot required>
                 <FieldLabel>Ticker</FieldLabel>
-                <Input
+                <TickerAutocomplete
                   value={ticker}
-                  onChange={(e) => setTicker(e.target.value)}
-                  placeholder="AAPL"
+                  onChange={(t, asset) => {
+                    setTicker(t);
+                    // auto-fill asset_type when picking from dropdown,
+                    // unless the user already overrode it manually
+                    if (asset && !assetTypeTouched) {
+                      setAssetType(asset.asset_type);
+                    }
+                  }}
+                  assetType={assetTypeTouched ? assetType : undefined}
+                  placeholder="VALE3, AAPL, BTC..."
                 />
               </FieldRoot>
               <FieldRoot required>
@@ -398,7 +410,10 @@ export default function PortfolioDetailPage({
                 <NativeSelectRoot>
                   <NativeSelectField
                     value={assetType}
-                    onChange={(e) => setAssetType(e.target.value as AssetType)}
+                    onChange={(e) => {
+                      setAssetType(e.target.value as AssetType);
+                      setAssetTypeTouched(true);
+                    }}
                   >
                     {ASSET_TYPES.map((t) => (
                       <option key={t} value={t}>
@@ -498,6 +513,7 @@ export default function PortfolioDetailPage({
                 <Table.Row>
                   <Table.ColumnHeader>Ticker</Table.ColumnHeader>
                   <Table.ColumnHeader>Tipo</Table.ColumnHeader>
+                  <Table.ColumnHeader>Preço</Table.ColumnHeader>
                   <Table.ColumnHeader>Valor (R$)</Table.ColumnHeader>
                   <Table.ColumnHeader>Quantidade</Table.ColumnHeader>
                   <Table.ColumnHeader>Compra</Table.ColumnHeader>
@@ -523,6 +539,12 @@ export default function PortfolioDetailPage({
                       <Text fontSize="xs" color="gray.300">
                         {ASSET_LABEL[inv.asset_type] ?? inv.asset_type}
                       </Text>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <PriceBadge
+                        ticker={inv.ticker}
+                        assetType={inv.asset_type}
+                      />
                     </Table.Cell>
                     <Table.Cell color="gain" fontWeight="bold">
                       {formatAmount(inv.amount_invested)}
