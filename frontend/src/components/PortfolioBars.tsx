@@ -93,7 +93,7 @@ export function PortfolioBars({ data }: Props) {
             }}
             labelStyle={{ color: "#fff" }}
             itemStyle={{ color: "#fff" }}
-            formatter={(value: number) => formatBRL(value)}
+            formatter={(value) => formatBRL(Number(value))}
           />
           <Bar dataKey="total" radius={[0, 6, 6, 0]} isAnimationActive={false}>
             {data.map((d, idx) => (

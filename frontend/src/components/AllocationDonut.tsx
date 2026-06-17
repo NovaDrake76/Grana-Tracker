@@ -101,7 +101,7 @@ export function AllocationDonut({ data, total, emptyLabel = "Sem investimentos a
             }}
             labelStyle={{ color: "#fff" }}
             itemStyle={{ color: "#fff" }}
-            formatter={(value: number) => formatBRL(value)}
+            formatter={(value) => formatBRL(Number(value))}
           />
         </PieChart>
       </ResponsiveContainer>
