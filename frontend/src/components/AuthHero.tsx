@@ -18,17 +18,17 @@ const FEATURES: Feature[] = [
   {
     icon: <WalletIcon size={18} />,
     title: "Carteiras reais e simuladas",
-    desc: "Separe o que voce de fato investe do que esta testando.",
+    desc: "Separe o que você de fato investe do que está testando.",
   },
   {
     icon: <LayersIcon size={18} />,
-    title: "Acoes, ETFs e cripto",
-    desc: "Tudo no mesmo lugar, com alocacao por classe.",
+    title: "Ações, ETFs e cripto",
+    desc: "Tudo no mesmo lugar, com alocação por classe.",
   },
   {
     icon: <TrendingUpIcon size={18} />,
-    title: "Visao consolidada",
-    desc: "Dashboard com totais, distribuicao e historico.",
+    title: "Visão consolidada",
+    desc: "Dashboard com totais, distribuição e histórico.",
   },
 ];
 
@@ -105,7 +105,7 @@ export function AuthHero() {
         </Heading>
         <Text color="gray.400" fontSize="md">
           Uma plataforma simples pra acompanhar carteiras reais e simuladas,
-          de acoes a cripto, com totais e alocacao na palma da mao.
+          de ações a cripto, com totais e alocação na palma da mão.
         </Text>
       </Box>
 
@@ -140,7 +140,7 @@ export function AuthHero() {
       {/* Footer credit */}
       <Box mt="auto" position="relative">
         <Text fontSize="xs" color="gray.600">
-          Projeto academico · Time DIM0547 — Breno · Nathan · Heittor
+          Projeto acadêmico · Time DIM0547 — Breno · Nathan · Heittor
         </Text>
       </Box>
     </Box>
