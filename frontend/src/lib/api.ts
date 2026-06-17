@@ -22,7 +22,11 @@ async function request<T>(
     headers,
   });
 
-  if (res.status === 401) {
+  // 401 em endpoints de /auth/* (login, register, refresh) significa credencial
+  // errada — não é sessão expirada. Não tentar refresh nem redirecionar; deixa
+  // cair no bloco genérico de !res.ok pra retornar a mensagem do backend
+  // ("invalid email or password") e o form trata via toast.
+  if (res.status === 401 && !endpoint.startsWith("/auth/")) {
     const refreshed = await tryRefreshToken();
     if (refreshed) {
       headers["Authorization"] = `Bearer ${localStorage.getItem("access_token")}`;
