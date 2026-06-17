@@ -137,6 +137,64 @@ func (c *CoinGeckoSource) fetchChunk(ctx context.Context, ids []string) (map[str
 	return out, nil
 }
 
+// FetchHistorical hits /coins/{id}/history?date=DD-MM-YYYY and returns the
+// USD market price on that day. CoinGecko's free tier only serves dates within
+// the last ~365 days; far-back dates return an error envelope which we surface
+// as ErrNotFound so the Service can collapse it into a clean 404.
+func (c *CoinGeckoSource) FetchHistorical(ctx context.Context, asset sqlc.Asset, date time.Time) (Price, error) {
+	if !asset.ExternalID.Valid || asset.ExternalID.String == "" {
+		return Price{}, ErrNotFound
+	}
+
+	// CoinGecko uses DD-MM-YYYY in the date query param (their explicit format).
+	dateStr := date.Format("02-01-2006")
+	u := fmt.Sprintf(
+		"%s/coins/%s/history?date=%s",
+		strings.TrimRight(c.BaseURL, "/"),
+		url.PathEscape(asset.ExternalID.String),
+		dateStr,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return Price{}, ErrNotFound
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return Price{}, ErrNotFound
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Price{}, ErrNotFound
+	}
+
+	// {"id":"bitcoin","market_data":{"current_price":{"usd":67234.12,...}}}
+	// On a date older than the free-tier window, CoinGecko sometimes omits
+	// market_data entirely — the json decode will succeed but the struct stays
+	// zero-valued, which we treat as ErrNotFound below.
+	var payload struct {
+		MarketData struct {
+			CurrentPrice map[string]float64 `json:"current_price"`
+		} `json:"market_data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return Price{}, ErrNotFound
+	}
+	price, ok := payload.MarketData.CurrentPrice[c.Currency]
+	if !ok {
+		return Price{}, ErrNotFound
+	}
+	return Price{
+		Ticker:    asset.Ticker,
+		AssetType: asset.AssetType,
+		Price:     strconv.FormatFloat(price, 'f', -1, 64),
+		Currency:  strings.ToUpper(c.Currency),
+		FetchedAt: date.UTC(),
+	}, nil
+}
+
 // chunkBy yields successive size-bounded slices of in. Implemented as a
 // closure-returning function so we can use `range` over Go 1.23 iterators.
 func chunkBy(in []string, size int) func(yield func([]string) bool) {

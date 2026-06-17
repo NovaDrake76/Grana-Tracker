@@ -80,6 +80,9 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 		r.Route("/assets", func(r chi.Router) {
 			r.Get("/search", assetHandler.Search)
 		})
+		// Historical lookup is routed BEFORE /prices/{ticker} so chi does not
+		// match "historical" as a ticker value.
+		r.Get("/prices/historical", assetHandler.GetHistoricalPrice)
 		r.Get("/prices/{ticker}", assetHandler.GetPrice)
 
 		r.Group(func(r chi.Router) {

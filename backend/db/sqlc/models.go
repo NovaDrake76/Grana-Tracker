@@ -31,6 +31,8 @@ type Investment struct {
 	Notes          pgtype.Text      `json:"notes"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	PurchasePrice  pgtype.Numeric   `json:"purchase_price"`
+	Currency       string           `json:"currency"`
 }
 
 type Portfolio struct {

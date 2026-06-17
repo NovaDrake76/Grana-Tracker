@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"math/big"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -28,6 +29,8 @@ type investmentResponse struct {
 	AssetType      string  `json:"asset_type"`
 	AmountInvested string  `json:"amount_invested"`
 	Quantity       *string `json:"quantity"`
+	PurchasePrice  string  `json:"purchase_price"`
+	Currency       string  `json:"currency"`
 	PurchaseDate   string  `json:"purchase_date"`
 	Notes          *string `json:"notes"`
 	CreatedAt      string  `json:"created_at"`
@@ -39,6 +42,8 @@ type createInvestmentRequest struct {
 	AssetType      string  `json:"asset_type"`
 	AmountInvested string  `json:"amount_invested"`
 	Quantity       *string `json:"quantity"`
+	PurchasePrice  string  `json:"purchase_price"`
+	Currency       string  `json:"currency"`
 	PurchaseDate   string  `json:"purchase_date"`
 	Notes          *string `json:"notes"`
 }
@@ -48,6 +53,8 @@ type updateInvestmentRequest struct {
 	AssetType      *string `json:"asset_type"`
 	AmountInvested *string `json:"amount_invested"`
 	Quantity       *string `json:"quantity"`
+	PurchasePrice  *string `json:"purchase_price"`
+	Currency       *string `json:"currency"`
 	PurchaseDate   *string `json:"purchase_date"`
 	Notes          *string `json:"notes"`
 }
@@ -59,6 +66,22 @@ var allowedAssetTypes = map[string]struct{}{
 	"index":  {},
 }
 
+// allowedCurrencies matches the CHECK constraint on investments.currency.
+var allowedCurrencies = map[string]struct{}{
+	"BRL": {},
+	"USD": {},
+}
+
+// purchasePriceString renders the purchase_price column. NULL becomes the
+// em-dash placeholder so the UI can show a clear "missing" cell without
+// special-casing nil checks in JSON consumers.
+func purchasePriceString(n pgtype.Numeric) string {
+	if !n.Valid {
+		return "—"
+	}
+	return numericStr(n)
+}
+
 func toInvestmentResponse(i sqlc.Investment) investmentResponse {
 	return investmentResponse{
 		ID:             uuidStr(i.ID),
@@ -67,11 +90,53 @@ func toInvestmentResponse(i sqlc.Investment) investmentResponse {
 		AssetType:      i.AssetType,
 		AmountInvested: numericStr(i.AmountInvested),
 		Quantity:       numericStrPtr(i.Quantity),
+		PurchasePrice:  purchasePriceString(i.PurchasePrice),
+		Currency:       i.Currency,
 		PurchaseDate:   dateStr(i.PurchaseDate),
 		Notes:          textPtr(i.Notes),
 		CreatedAt:      tsString(i.CreatedAt),
 		UpdatedAt:      tsString(i.UpdatedAt),
 	}
+}
+
+// derivePurchasePrice computes amount_invested / quantity as a big.Float and
+// returns the decimal string. Used when the caller omitted purchase_price but
+// supplied quantity > 0 — we never want a NULL purchase_price after this
+// migration if we can avoid it.
+func derivePurchasePrice(amount, qty pgtype.Numeric) (pgtype.Numeric, bool) {
+	if !amount.Valid || !qty.Valid {
+		return pgtype.Numeric{}, false
+	}
+	amountF, err := numericToBigFloat(amount)
+	if err != nil {
+		return pgtype.Numeric{}, false
+	}
+	qtyF, err := numericToBigFloat(qty)
+	if err != nil {
+		return pgtype.Numeric{}, false
+	}
+	if qtyF.Sign() <= 0 {
+		return pgtype.Numeric{}, false
+	}
+	res := new(big.Float).SetPrec(128).Quo(amountF, qtyF)
+	// 8 decimal places matches the DECIMAL(18,8) column.
+	text := res.Text('f', 8)
+	var out pgtype.Numeric
+	if err := out.Scan(text); err != nil {
+		return pgtype.Numeric{}, false
+	}
+	return out, true
+}
+
+// numericToBigFloat converts pgtype.Numeric to *big.Float by going through the
+// string representation, avoiding precision loss from float64.
+func numericToBigFloat(n pgtype.Numeric) (*big.Float, error) {
+	s := numericStr(n)
+	if s == "" {
+		return nil, errors.New("empty numeric")
+	}
+	f, _, err := big.ParseFloat(s, 10, 128, big.ToNearestEven)
+	return f, err
 }
 
 // adds an investment to a portfolio the caller owns.
@@ -111,6 +176,15 @@ func (h *InvestmentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	currency := req.Currency
+	if currency == "" {
+		currency = "BRL"
+	}
+	if _, ok := allowedCurrencies[currency]; !ok {
+		writeError(w, http.StatusBadRequest, "currency must be one of BRL, USD", "VALIDATION_ERROR")
+		return
+	}
+
 	amount, err := parseNumeric(req.AmountInvested)
 	if err != nil || !amount.Valid {
 		writeError(w, http.StatusBadRequest, "amount_invested must be a valid decimal", "VALIDATION_ERROR")
@@ -126,6 +200,22 @@ func (h *InvestmentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// purchase_price authoritativeness: if the caller supplied it, use it as is.
+	// If it is missing but we know quantity > 0, derive amount/quantity so the
+	// row is not stranded with NULL purchase_price.
+	var purchasePrice pgtype.Numeric
+	if req.PurchasePrice != "" {
+		purchasePrice, err = parseNumeric(req.PurchasePrice)
+		if err != nil || !purchasePrice.Valid {
+			writeError(w, http.StatusBadRequest, "purchase_price must be a valid decimal", "VALIDATION_ERROR")
+			return
+		}
+	} else if qty.Valid {
+		if derived, ok := derivePurchasePrice(amount, qty); ok {
+			purchasePrice = derived
+		}
+	}
+
 	date, err := parseDate(req.PurchaseDate)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "purchase_date must be YYYY-MM-DD", "VALIDATION_ERROR")
@@ -138,6 +228,8 @@ func (h *InvestmentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		AssetType:      req.AssetType,
 		AmountInvested: amount,
 		Quantity:       qty,
+		PurchasePrice:  purchasePrice,
+		Currency:       currency,
 		PurchaseDate:   date,
 		Notes:          pgTextPtr(req.Notes),
 	})
@@ -186,6 +278,8 @@ func (h *InvestmentHandler) Get(w http.ResponseWriter, r *http.Request) {
 			AssetType:      row.AssetType,
 			AmountInvested: numericStr(row.AmountInvested),
 			Quantity:       numericStrPtr(row.Quantity),
+			PurchasePrice:  purchasePriceString(row.PurchasePrice),
+			Currency:       row.Currency,
 			PurchaseDate:   dateStr(row.PurchaseDate),
 			Notes:          textPtr(row.Notes),
 			CreatedAt:      tsString(row.CreatedAt),
@@ -264,6 +358,44 @@ func (h *InvestmentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	currency := current.Currency
+	if req.Currency != nil {
+		if *req.Currency != "" {
+			if _, ok := allowedCurrencies[*req.Currency]; !ok {
+				writeError(w, http.StatusBadRequest, "currency must be one of BRL, USD", "VALIDATION_ERROR")
+				return
+			}
+			currency = *req.Currency
+		}
+	}
+
+	// purchase_price update rules:
+	//   - explicit value wins ("" clears it and we attempt a backfill)
+	//   - omitted field keeps the existing value
+	//   - if cleared/missing and quantity > 0, derive amount/quantity
+	purchasePrice := current.PurchasePrice
+	purchasePriceProvided := false
+	if req.PurchasePrice != nil {
+		purchasePriceProvided = true
+		if *req.PurchasePrice == "" {
+			purchasePrice = pgtype.Numeric{}
+		} else {
+			parsed, err := parseNumeric(*req.PurchasePrice)
+			if err != nil || !parsed.Valid {
+				writeError(w, http.StatusBadRequest, "purchase_price must be a valid decimal", "VALIDATION_ERROR")
+				return
+			}
+			purchasePrice = parsed
+		}
+	}
+	// If amount or qty changed and the caller did not pin purchase_price
+	// explicitly, refresh it from amount/qty when both are available.
+	if !purchasePriceProvided && !purchasePrice.Valid && qty.Valid {
+		if derived, ok := derivePurchasePrice(amount, qty); ok {
+			purchasePrice = derived
+		}
+	}
+
 	date := current.PurchaseDate
 	if req.PurchaseDate != nil {
 		parsed, err := parseDate(*req.PurchaseDate)
@@ -285,6 +417,8 @@ func (h *InvestmentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		AssetType:      assetType,
 		AmountInvested: amount,
 		Quantity:       qty,
+		PurchasePrice:  purchasePrice,
+		Currency:       currency,
 		PurchaseDate:   date,
 		Notes:          notes,
 	})

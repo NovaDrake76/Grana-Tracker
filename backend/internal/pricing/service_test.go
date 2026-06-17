@@ -38,6 +38,10 @@ type stubSource struct {
 
 func (s *stubSource) Name() string { return s.name }
 
+func (s *stubSource) FetchHistorical(_ context.Context, _ sqlc.Asset, _ time.Time) (Price, error) {
+	return Price{}, ErrNotFound
+}
+
 func (s *stubSource) Fetch(_ context.Context, assets []sqlc.Asset) (map[string]Price, error) {
 	s.calls++
 	out := make(map[string]Price, len(assets))
@@ -217,4 +221,7 @@ type skippingSource struct{}
 func (skippingSource) Name() string { return "skip" }
 func (skippingSource) Fetch(_ context.Context, _ []sqlc.Asset) (map[string]Price, error) {
 	return nil, ErrSkipped
+}
+func (skippingSource) FetchHistorical(_ context.Context, _ sqlc.Asset, _ time.Time) (Price, error) {
+	return Price{}, ErrSkipped
 }

@@ -13,6 +13,8 @@ type investmentDTO struct {
 	AssetType      string  `json:"asset_type"`
 	AmountInvested string  `json:"amount_invested"`
 	Quantity       *string `json:"quantity"`
+	PurchasePrice  string  `json:"purchase_price"`
+	Currency       string  `json:"currency"`
 	PurchaseDate   string  `json:"purchase_date"`
 	Notes          *string `json:"notes"`
 }
@@ -294,6 +296,94 @@ func TestInvestmentValidation(t *testing.T) {
 			t.Errorf("status = %d, want 401", rr.Code)
 		}
 	})
+}
+
+// TestInvestmentPurchasePriceAndCurrency exercises the migration 004 fields:
+// a BTC create with explicit purchase_price=2500.00 and currency=USD must
+// round-trip on GET, and a missing purchase_price with quantity>0 must be
+// backfilled server-side (amount/quantity).
+func TestInvestmentPurchasePriceAndCurrency(t *testing.T) {
+	requireDB(t)
+	truncateAll(t)
+
+	r := newTestRouter(t)
+	token, pf := setupOnePortfolio(t, "inv-purchase-price@example.com")
+
+	// case 1: explicit purchase_price + currency=USD
+	rr, resp := doRequest(t, r, http.MethodPost, "/api/portfolios/"+pf+"/investments", token, map[string]interface{}{
+		"ticker":          "BTC",
+		"asset_type":      "crypto",
+		"amount_invested": "1250.00",
+		"quantity":        "0.5",
+		"purchase_price":  "2500.00",
+		"currency":        "USD",
+		"purchase_date":   "2025-06-01",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body %s", rr.Code, rr.Body.String())
+	}
+	var inv investmentDTO
+	if err := json.Unmarshal(resp.Data, &inv); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if inv.Currency != "USD" {
+		t.Errorf("currency = %q, want USD", inv.Currency)
+	}
+	if inv.PurchasePrice != "2500.00" && inv.PurchasePrice != "2500" && inv.PurchasePrice != "2500.00000000" {
+		t.Errorf("purchase_price = %q, want 2500.00", inv.PurchasePrice)
+	}
+
+	// GET — same row, same values
+	rr, resp = doRequest(t, r, http.MethodGet, "/api/investments/"+inv.ID, token, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get status = %d", rr.Code)
+	}
+	var got investmentDTO
+	if err := json.Unmarshal(resp.Data, &got); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	if got.Currency != "USD" {
+		t.Errorf("get currency = %q, want USD", got.Currency)
+	}
+	if got.PurchasePrice != inv.PurchasePrice {
+		t.Errorf("get purchase_price = %q, want %q", got.PurchasePrice, inv.PurchasePrice)
+	}
+
+	// case 2: omit purchase_price, supply quantity — handler should backfill
+	rr, resp = doRequest(t, r, http.MethodPost, "/api/portfolios/"+pf+"/investments", token, map[string]interface{}{
+		"ticker":          "ETH",
+		"asset_type":      "crypto",
+		"amount_invested": "1000.00",
+		"quantity":        "4",
+		"purchase_date":   "2025-06-02",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create eth status = %d, body %s", rr.Code, rr.Body.String())
+	}
+	var eth investmentDTO
+	if err := json.Unmarshal(resp.Data, &eth); err != nil {
+		t.Fatalf("decode eth: %v", err)
+	}
+	// 1000 / 4 = 250
+	if eth.PurchasePrice == "—" || eth.PurchasePrice == "" {
+		t.Errorf("eth purchase_price not derived, got %q", eth.PurchasePrice)
+	}
+	// Default currency is BRL when omitted
+	if eth.Currency != "BRL" {
+		t.Errorf("eth currency = %q, want BRL (default)", eth.Currency)
+	}
+
+	// case 3: invalid currency rejected
+	rr, _ = doRequest(t, r, http.MethodPost, "/api/portfolios/"+pf+"/investments", token, map[string]interface{}{
+		"ticker":          "AAPL",
+		"asset_type":      "stock",
+		"amount_invested": "100.00",
+		"currency":        "EUR",
+		"purchase_date":   "2025-06-03",
+	})
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("EUR currency status = %d, want 400", rr.Code)
+	}
 }
 
 func TestPortfolioDeleteCascadesInvestments(t *testing.T) {

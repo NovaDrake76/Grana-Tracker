@@ -45,9 +45,16 @@ type Price struct {
 // tickers it could resolve and an error describing the rest. The Service
 // guarantees the input slice will only contain assets routed to this source
 // (e.g. only crypto assets to CoinGecko).
+//
+// FetchHistorical returns a single Price at the given date for the asset.
+// Sources that cannot serve a historical quote (B3 stocks via Alpha Vantage,
+// CoinGecko free tier beyond ~365 days, rate-limited responses, etc.) MUST
+// return ErrNotFound so the Service can collapse the failure into a 404 for
+// the HTTP handler.
 type Source interface {
 	Name() string
 	Fetch(ctx context.Context, assets []sqlc.Asset) (map[string]Price, error)
+	FetchHistorical(ctx context.Context, asset sqlc.Asset, date time.Time) (Price, error)
 }
 
 // RefreshSummary describes what RefreshAll did. The HTTP handler returns it.
@@ -126,6 +133,33 @@ func (s *Service) GetCurrent(ctx context.Context, ticker, assetType string) (*Pr
 		FetchedAt: fetched,
 		Stale:     stale,
 	}, nil
+}
+
+// GetHistorical resolves the asset and asks the right Source for a price on
+// the requested date. Any failure (no source registered, source not found,
+// upstream error, rate limit, far-back date) collapses to ErrNotFound so the
+// HTTP handler can render a clean 404. The caller is expected to validate the
+// date format before calling this.
+func (s *Service) GetHistorical(ctx context.Context, ticker, assetType string, date time.Time) (*Price, error) {
+	src, ok := s.sources[assetType]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	asset, err := s.queries.GetAssetByTicker(ctx, sqlc.GetAssetByTickerParams{
+		Lower:     ticker,
+		AssetType: assetType,
+	})
+	if err != nil {
+		// Asset not in our catalog — nothing to look up upstream.
+		return nil, ErrNotFound
+	}
+	price, err := src.FetchHistorical(ctx, asset, date)
+	if err != nil {
+		// Collapse every upstream failure to ErrNotFound so the handler does
+		// not need to distinguish rate-limit vs. unsupported vs. transient.
+		return nil, ErrNotFound
+	}
+	return &price, nil
 }
 
 // RefreshAll walks the asset catalog, groups by asset_type, calls each Source,

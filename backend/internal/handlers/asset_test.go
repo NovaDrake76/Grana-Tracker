@@ -21,6 +21,19 @@ type stubPricingSource struct {
 }
 
 func (s *stubPricingSource) Name() string { return "stub" }
+func (s *stubPricingSource) FetchHistorical(_ context.Context, asset sqlc.Asset, date time.Time) (pricing.Price, error) {
+	price, ok := s.priceByTicker[asset.Ticker]
+	if !ok {
+		return pricing.Price{}, pricing.ErrNotFound
+	}
+	return pricing.Price{
+		Ticker:    asset.Ticker,
+		AssetType: asset.AssetType,
+		Price:     price,
+		Currency:  asset.Currency,
+		FetchedAt: date.UTC(),
+	}, nil
+}
 func (s *stubPricingSource) Fetch(_ context.Context, assets []sqlc.Asset) (map[string]pricing.Price, error) {
 	out := make(map[string]pricing.Price, len(assets))
 	now := time.Now().UTC()
@@ -51,6 +64,7 @@ func newAssetTestRouter(t *testing.T) (chi.Router, *pricing.Service) {
 	r := chi.NewRouter()
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/assets/search", h.Search)
+		r.Get("/prices/historical", h.GetHistoricalPrice)
 		r.Get("/prices/{ticker}", h.GetPrice)
 		r.Post("/prices/refresh", h.Refresh)
 	})

@@ -12,9 +12,9 @@ import (
 )
 
 const createInvestment = `-- name: CreateInvestment :one
-INSERT INTO investments (portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_date, notes)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_date, notes, created_at, updated_at
+INSERT INTO investments (portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_price, currency, purchase_date, notes)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_date, notes, created_at, updated_at, purchase_price, currency
 `
 
 type CreateInvestmentParams struct {
@@ -23,6 +23,8 @@ type CreateInvestmentParams struct {
 	AssetType      string         `json:"asset_type"`
 	AmountInvested pgtype.Numeric `json:"amount_invested"`
 	Quantity       pgtype.Numeric `json:"quantity"`
+	PurchasePrice  pgtype.Numeric `json:"purchase_price"`
+	Currency       string         `json:"currency"`
 	PurchaseDate   pgtype.Date    `json:"purchase_date"`
 	Notes          pgtype.Text    `json:"notes"`
 }
@@ -34,6 +36,8 @@ func (q *Queries) CreateInvestment(ctx context.Context, arg CreateInvestmentPara
 		arg.AssetType,
 		arg.AmountInvested,
 		arg.Quantity,
+		arg.PurchasePrice,
+		arg.Currency,
 		arg.PurchaseDate,
 		arg.Notes,
 	)
@@ -49,6 +53,8 @@ func (q *Queries) CreateInvestment(ctx context.Context, arg CreateInvestmentPara
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurchasePrice,
+		&i.Currency,
 	)
 	return i, err
 }
@@ -64,7 +70,7 @@ func (q *Queries) DeleteInvestment(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getInvestmentByID = `-- name: GetInvestmentByID :one
-SELECT id, portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_date, notes, created_at, updated_at
+SELECT id, portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_date, notes, created_at, updated_at, purchase_price, currency
 FROM investments
 WHERE id = $1
 `
@@ -83,12 +89,14 @@ func (q *Queries) GetInvestmentByID(ctx context.Context, id pgtype.UUID) (Invest
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurchasePrice,
+		&i.Currency,
 	)
 	return i, err
 }
 
 const getInvestmentWithOwner = `-- name: GetInvestmentWithOwner :one
-SELECT i.id, i.portfolio_id, i.ticker, i.asset_type, i.amount_invested, i.quantity, i.purchase_date, i.notes, i.created_at, i.updated_at, p.user_id
+SELECT i.id, i.portfolio_id, i.ticker, i.asset_type, i.amount_invested, i.quantity, i.purchase_date, i.notes, i.created_at, i.updated_at, i.purchase_price, i.currency, p.user_id
 FROM investments i
 JOIN portfolios p ON p.id = i.portfolio_id
 WHERE i.id = $1
@@ -105,6 +113,8 @@ type GetInvestmentWithOwnerRow struct {
 	Notes          pgtype.Text      `json:"notes"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	PurchasePrice  pgtype.Numeric   `json:"purchase_price"`
+	Currency       string           `json:"currency"`
 	UserID         pgtype.UUID      `json:"user_id"`
 }
 
@@ -123,13 +133,15 @@ func (q *Queries) GetInvestmentWithOwner(ctx context.Context, id pgtype.UUID) (G
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurchasePrice,
+		&i.Currency,
 		&i.UserID,
 	)
 	return i, err
 }
 
 const listInvestmentsByPortfolio = `-- name: ListInvestmentsByPortfolio :many
-SELECT id, portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_date, notes, created_at, updated_at
+SELECT id, portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_date, notes, created_at, updated_at, purchase_price, currency
 FROM investments
 WHERE portfolio_id = $1
 ORDER BY purchase_date DESC, created_at DESC
@@ -155,6 +167,8 @@ func (q *Queries) ListInvestmentsByPortfolio(ctx context.Context, portfolioID pg
 			&i.Notes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PurchasePrice,
+			&i.Currency,
 		); err != nil {
 			return nil, err
 		}
@@ -168,9 +182,9 @@ func (q *Queries) ListInvestmentsByPortfolio(ctx context.Context, portfolioID pg
 
 const updateInvestment = `-- name: UpdateInvestment :one
 UPDATE investments
-SET ticker = $2, asset_type = $3, amount_invested = $4, quantity = $5, purchase_date = $6, notes = $7, updated_at = NOW()
+SET ticker = $2, asset_type = $3, amount_invested = $4, quantity = $5, purchase_price = $6, currency = $7, purchase_date = $8, notes = $9, updated_at = NOW()
 WHERE id = $1
-RETURNING id, portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_date, notes, created_at, updated_at
+RETURNING id, portfolio_id, ticker, asset_type, amount_invested, quantity, purchase_date, notes, created_at, updated_at, purchase_price, currency
 `
 
 type UpdateInvestmentParams struct {
@@ -179,6 +193,8 @@ type UpdateInvestmentParams struct {
 	AssetType      string         `json:"asset_type"`
 	AmountInvested pgtype.Numeric `json:"amount_invested"`
 	Quantity       pgtype.Numeric `json:"quantity"`
+	PurchasePrice  pgtype.Numeric `json:"purchase_price"`
+	Currency       string         `json:"currency"`
 	PurchaseDate   pgtype.Date    `json:"purchase_date"`
 	Notes          pgtype.Text    `json:"notes"`
 }
@@ -190,6 +206,8 @@ func (q *Queries) UpdateInvestment(ctx context.Context, arg UpdateInvestmentPara
 		arg.AssetType,
 		arg.AmountInvested,
 		arg.Quantity,
+		arg.PurchasePrice,
+		arg.Currency,
 		arg.PurchaseDate,
 		arg.Notes,
 	)
@@ -205,6 +223,8 @@ func (q *Queries) UpdateInvestment(ctx context.Context, arg UpdateInvestmentPara
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurchasePrice,
+		&i.Currency,
 	)
 	return i, err
 }

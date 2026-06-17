@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -139,6 +140,64 @@ func (h *AssetHandler) GetPrice(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": resp,
+	})
+}
+
+// historicalPriceResponse is the JSON payload returned by
+// GET /api/prices/historical.
+type historicalPriceResponse struct {
+	Ticker    string `json:"ticker"`
+	AssetType string `json:"asset_type"`
+	Price     string `json:"price"`
+	Currency  string `json:"currency"`
+	Date      string `json:"date"`
+}
+
+// GetHistoricalPrice is GET /api/prices/historical?ticker=X&type=Y&date=YYYY-MM-DD.
+// Public — same exposure model as GetPrice (no upstream quota burnt for the
+// caller, just one round trip through the cached source adapter). Returns 404
+// with code NOT_FOUND for every upstream failure (rate-limit, unsupported
+// asset class, far-back dates) so the front-end has a single error branch.
+func (h *AssetHandler) GetHistoricalPrice(w http.ResponseWriter, r *http.Request) {
+	ticker := strings.TrimSpace(r.URL.Query().Get("ticker"))
+	if ticker == "" {
+		writeError(w, http.StatusBadRequest, "ticker is required", "VALIDATION_ERROR")
+		return
+	}
+	assetType := strings.TrimSpace(r.URL.Query().Get("type"))
+	if _, ok := allowedAssetTypes[assetType]; !ok {
+		writeError(w, http.StatusBadRequest, "type must be one of stock, crypto, etf, index", "VALIDATION_ERROR")
+		return
+	}
+	dateStr := strings.TrimSpace(r.URL.Query().Get("date"))
+	if dateStr == "" {
+		writeError(w, http.StatusBadRequest, "date is required (YYYY-MM-DD)", "VALIDATION_ERROR")
+		return
+	}
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "date must be YYYY-MM-DD", "VALIDATION_ERROR")
+		return
+	}
+
+	price, err := h.Pricing.GetHistorical(r.Context(), ticker, assetType, date)
+	if err != nil {
+		if errors.Is(err, pricing.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "historical price not available", "NOT_FOUND")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load historical price", "INTERNAL_ERROR")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": historicalPriceResponse{
+			Ticker:    price.Ticker,
+			AssetType: price.AssetType,
+			Price:     price.Price,
+			Currency:  price.Currency,
+			Date:      dateStr,
+		},
 	})
 }
 

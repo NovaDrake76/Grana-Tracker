@@ -105,6 +105,84 @@ func (a *AlphaVantageSource) Fetch(ctx context.Context, assets []sqlc.Asset) (ma
 	return out, nil
 }
 
+// FetchHistorical hits TIME_SERIES_DAILY for the ticker and looks up the
+// closing price on the requested date. If the date is a weekend/holiday, the
+// function steps back up to 7 days to find the nearest trading day. B3 tickers
+// (Alpha Vantage does not cover Brazilian equities on the free tier) return an
+// empty payload, which we surface as ErrNotFound. Missing/placeholder API key
+// returns ErrSkipped to mirror the live-fetch behaviour.
+func (a *AlphaVantageSource) FetchHistorical(ctx context.Context, asset sqlc.Asset, date time.Time) (Price, error) {
+	if _, isPlaceholder := keyPlaceholders[a.APIKey]; isPlaceholder {
+		return Price{}, ErrSkipped
+	}
+
+	// Alpha Vantage free tier explicitly does not include B3 (BVMF). Avoid
+	// burning quota on a request we know will return empty.
+	if asset.Market.Valid && strings.EqualFold(asset.Market.String, "BVMF") {
+		return Price{}, ErrNotFound
+	}
+
+	q := url.Values{}
+	q.Set("function", "TIME_SERIES_DAILY")
+	q.Set("symbol", asset.Ticker)
+	q.Set("apikey", a.APIKey)
+
+	u := fmt.Sprintf("%s/query?%s", strings.TrimRight(a.BaseURL, "/"), q.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return Price{}, ErrNotFound
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := a.Client.Do(req)
+	if err != nil {
+		return Price{}, ErrNotFound
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Price{}, ErrNotFound
+	}
+
+	// {"Meta Data": {...}, "Time Series (Daily)": {"2025-06-15": {"4. close": "189.70", ...}, ...}}
+	var payload struct {
+		TimeSeries map[string]map[string]string `json:"Time Series (Daily)"`
+		Note       string                       `json:"Note"`
+		Info       string                       `json:"Information"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return Price{}, ErrNotFound
+	}
+	if payload.Note != "" || payload.Info != "" {
+		// Rate-limited or premium-only — caller treats both the same.
+		return Price{}, ErrNotFound
+	}
+	if len(payload.TimeSeries) == 0 {
+		return Price{}, ErrNotFound
+	}
+
+	// Walk back up to 7 days to skip weekends/holidays where the symbol did
+	// not trade. We always normalise to UTC midnight first because the upstream
+	// payload is keyed by trading-day calendar date.
+	cursor := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+	for step := 0; step < 8; step++ {
+		key := cursor.Format("2006-01-02")
+		if row, ok := payload.TimeSeries[key]; ok {
+			price := row["4. close"]
+			if price != "" {
+				return Price{
+					Ticker:    asset.Ticker,
+					AssetType: asset.AssetType,
+					Price:     price,
+					Currency:  "USD",
+					FetchedAt: cursor,
+				}, nil
+			}
+		}
+		cursor = cursor.AddDate(0, 0, -1)
+	}
+	return Price{}, ErrNotFound
+}
+
 // fetchOne is one HTTP round trip to GLOBAL_QUOTE.
 func (a *AlphaVantageSource) fetchOne(ctx context.Context, ticker string) (price, currency string, err error) {
 	q := url.Values{}
