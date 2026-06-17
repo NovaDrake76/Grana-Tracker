@@ -46,8 +46,21 @@ export interface Investment {
   quantity: string | null;
   purchase_date: string;
   notes: string | null;
+  purchase_price?: string;
+  currency?: "BRL" | "USD";
   created_at: string;
   updated_at: string;
+}
+
+// Resposta de GET /api/prices/historical?ticker=&type=&date= — usada para
+// pré-preencher o preço unitário de compra a partir do histórico.
+export interface HistoricalPriceResponse {
+  ticker: string;
+  asset_type: AssetType;
+  date: string;
+  price: string;
+  currency: string;
+  source?: string;
 }
 
 export interface PortfolioWithInvestments extends Portfolio {

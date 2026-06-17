@@ -36,6 +36,7 @@ import {
   WalletIcon,
 } from "@/components/Icons";
 import { useAuth } from "@/context/AuthContext";
+import { usePriceMap, priceKey } from "@/hooks/usePriceMap";
 
 function formatBRL(value: number) {
   if (!Number.isFinite(value)) return "—";
@@ -44,6 +45,21 @@ function formatBRL(value: number) {
     currency: "BRL",
     maximumFractionDigits: 2,
   });
+}
+
+function formatMoney(value: number, currency: string) {
+  if (!Number.isFinite(value)) return "—";
+  try {
+    return value.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: currency || "BRL",
+      maximumFractionDigits: 2,
+    });
+  } catch {
+    return `${currency || ""} ${value.toLocaleString("pt-BR", {
+      maximumFractionDigits: 2,
+    })}`.trim();
+  }
 }
 
 export default function DashboardPage() {
@@ -96,6 +112,44 @@ export default function DashboardPage() {
     (sum, inv) => sum + (Number(inv.amount_invested) || 0),
     0,
   );
+
+  // Cotações atuais em memória, indexadas por ticker+tipo. Falhas individuais
+  // só fazem o card cair pra "—" — nunca quebra a página.
+  const {
+    map: priceMap,
+    loading: pricesLoading,
+    error: pricesError,
+  } = usePriceMap(allInvestments);
+
+  // Agrupa patrimônio atual e investido por moeda (BRL/USD). Só posições com
+  // quantity definida contribuem pro patrimônio — sem quantidade não dá pra
+  // computar valor de mercado de forma honesta.
+  const byCurrency: Record<string, { atual: number; investido: number }> = {};
+  for (const inv of allInvestments) {
+    const cur = (inv.currency || "BRL").toUpperCase();
+    if (!byCurrency[cur]) byCurrency[cur] = { atual: 0, investido: 0 };
+    byCurrency[cur].investido += Number(inv.amount_invested) || 0;
+    const qty = inv.quantity == null ? null : Number(inv.quantity);
+    const quote = priceMap[priceKey(inv.ticker, inv.asset_type)];
+    if (qty != null && Number.isFinite(qty) && quote) {
+      byCurrency[cur].atual += qty * quote.price;
+    }
+  }
+  const brl = byCurrency["BRL"] ?? { atual: 0, investido: 0 };
+  const usd = byCurrency["USD"] ?? { atual: 0, investido: 0 };
+  const hasUsd = usd.investido > 0 || usd.atual > 0;
+  const totalAtualBRL = brl.atual;
+  const totalGanhoBRL = brl.atual - brl.investido;
+  const totalGanhoPct =
+    brl.investido > 0 ? (totalGanhoBRL / brl.investido) * 100 : 0;
+  const hasAnyPrice = Object.keys(priceMap).length > 0;
+  const showPatrimonio = hasAnyPrice && !pricesError;
+  const ganhoColor =
+    totalGanhoBRL > 0.005
+      ? "gain"
+      : totalGanhoBRL < -0.005
+        ? "loss"
+        : "gray";
 
   // Alocação por classe de ativo (em valor investido)
   const allocByType = allInvestments.reduce<Record<string, number>>(
@@ -194,22 +248,63 @@ export default function DashboardPage() {
         </Flex>
       </Box>
 
-      {/* Stat cards */}
-      <SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} gap="4">
+      {/* Stat cards — agora com Patrimônio atual e Ganho/Perda em destaque.
+          Cards originais ficam mais enxutos (helpers curtos) pra caber em
+          telas médias sem virar mar de números. */}
+      <SimpleGrid columns={{ base: 1, sm: 2, lg: 3, xl: 6 }} gap="4">
+        <StatCard
+          label="Patrimônio atual"
+          value={showPatrimonio ? formatBRL(totalAtualBRL) : "—"}
+          helper={
+            pricesLoading
+              ? "atualizando preços…"
+              : !showPatrimonio
+                ? "preços indisponíveis"
+                : hasUsd
+                  ? `+ ${formatMoney(usd.atual, "USD")}`
+                  : "soma das posições em BRL"
+          }
+          icon={<TrendingUpIcon size={16} />}
+          accent="brand"
+        />
+        <StatCard
+          label="Ganho / Perda"
+          value={
+            showPatrimonio
+              ? `${formatBRL(totalGanhoBRL)} (${
+                  totalGanhoPct >= 0 ? "+" : ""
+                }${totalGanhoPct.toLocaleString("pt-BR", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}%)`
+              : "—"
+          }
+          helper={
+            pricesLoading
+              ? "atualizando preços…"
+              : !showPatrimonio
+                ? "sem cotações no cache"
+                : hasUsd
+                  ? `USD: ${formatMoney(usd.atual - usd.investido, "USD")}`
+                  : "vs. valor investido"
+          }
+          icon={<WalletIcon size={16} />}
+          accent={ganhoColor}
+        />
         <StatCard
           label="Portfólios"
           value={totalPortfolios}
           helper={`${realCount} reais · ${simulatedCount} simulados`}
           icon={<PortfolioIcon size={16} />}
-          accent="brand"
+          accent="purple"
         />
         <StatCard
           label="Posições"
           value={totalHoldings}
           helper={
             totalHoldings === 0
-              ? "Nenhuma posição ainda"
-              : `Em ${totalPortfolios} portfólio${totalPortfolios === 1 ? "" : "s"}`
+              ? "Nenhuma posição"
+              : `${totalPortfolios} portfólio${totalPortfolios === 1 ? "" : "s"}`
           }
           icon={<LayersIcon size={16} />}
           accent="purple"
@@ -217,16 +312,14 @@ export default function DashboardPage() {
         <StatCard
           label="Classes de ativo"
           value={Object.keys(allocByType).length || 0}
-          helper={
-            allocSlices.map((s) => s.asset_type).join(" · ") || "—"
-          }
+          helper={allocSlices.map((s) => s.asset_type).join(" · ") || "—"}
           icon={<TrendingUpIcon size={16} />}
           accent="gain"
         />
         <StatCard
           label="Ticket médio"
           value={formatBRL(avgPerHolding)}
-          helper="Valor médio por posição"
+          helper="Por posição"
           icon={<WalletIcon size={16} />}
           accent="gray"
         />

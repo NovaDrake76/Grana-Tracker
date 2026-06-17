@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, use } from "react";
+import { useState, useEffect, useCallback, use, useRef } from "react";
 import { useRouter } from "next/navigation";
 import NextLink from "next/link";
 import {
@@ -26,7 +26,9 @@ import {
 import { api } from "@/lib/api";
 import { toaster } from "@/lib/toaster";
 import type {
+  Asset,
   AssetType,
+  HistoricalPriceResponse,
   Investment,
   PortfolioWithInvestments,
   ApiResponse,
@@ -39,14 +41,16 @@ import {
   type AllocationSlice,
 } from "@/components/AllocationDonut";
 import {
+  LockIcon,
   PencilIcon,
   PlusIcon,
   TrashIcon,
 } from "@/components/Icons";
 import { TickerAutocomplete } from "@/components/TickerAutocomplete";
-import { PriceBadge } from "@/components/PriceBadge";
+import { PositionCell } from "@/components/PositionCell";
 
 const ASSET_TYPES: AssetType[] = ["stock", "crypto", "etf", "index"];
+const CURRENCIES: ("BRL" | "USD")[] = ["BRL", "USD"];
 
 function formatBRL(value: number) {
   if (!Number.isFinite(value)) return "—";
@@ -55,6 +59,21 @@ function formatBRL(value: number) {
     currency: "BRL",
     maximumFractionDigits: 2,
   });
+}
+
+function formatMoney(value: number, currency: string) {
+  if (!Number.isFinite(value)) return "—";
+  try {
+    return value.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: currency || "BRL",
+      maximumFractionDigits: 2,
+    });
+  } catch {
+    return `${currency || ""} ${value.toLocaleString("pt-BR", {
+      maximumFractionDigits: 2,
+    })}`.trim();
+  }
 }
 
 function formatAmount(value: string) {
@@ -74,6 +93,13 @@ function formatQuantity(value: string | null) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
 }
 
+// Inferência: ativos cuja moeda nativa é USD vêm marcados como USD no catálogo
+// (AAPL, BTC, etc). BRL é o default seguro pro mercado local.
+function defaultCurrencyForAsset(asset?: Asset): "BRL" | "USD" {
+  if (!asset) return "BRL";
+  return asset.currency?.toUpperCase() === "USD" ? "USD" : "BRL";
+}
+
 export default function PortfolioDetailPage({
   params,
 }: {
@@ -88,15 +114,30 @@ export default function PortfolioDetailPage({
   const [loading, setLoading] = useState(true);
 
   const [ticker, setTicker] = useState("");
+  // lockedFromCatalog mantém o Asset escolhido no autocomplete. Quando presente,
+  // asset_type é DERIVADO desse asset e a UI não permite override manual — fecha
+  // o bug que aceitava "VALE3 + crypto".
+  const [lockedFromCatalog, setLockedFromCatalog] = useState<Asset | null>(null);
   const [assetType, setAssetType] = useState<AssetType>("stock");
-  const [assetTypeTouched, setAssetTypeTouched] = useState(false);
   const [amountInvested, setAmountInvested] = useState("");
   const [quantity, setQuantity] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
+  const [purchasePrice, setPurchasePrice] = useState("");
+  const [purchasePriceTouched, setPurchasePriceTouched] = useState(false);
+  const [purchasePriceAutoFilled, setPurchasePriceAutoFilled] = useState(false);
+  const [historicalMissing, setHistoricalMissing] = useState(false);
+  const [currency, setCurrency] = useState<"BRL" | "USD">("BRL");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // o tipo efetivo enviado ao backend e usado na busca de preço histórico:
+  // se o usuário escolheu do catálogo, é o do catálogo; caso contrário, o que
+  // ele escolheu manualmente no select.
+  const effectiveAssetType: AssetType = lockedFromCatalog
+    ? lockedFromCatalog.asset_type
+    : assetType;
 
   const load = useCallback(async () => {
     try {
@@ -122,13 +163,85 @@ export default function PortfolioDetailPage({
 
   const resetForm = () => {
     setTicker("");
+    setLockedFromCatalog(null);
     setAssetType("stock");
-    setAssetTypeTouched(false);
     setAmountInvested("");
     setQuantity("");
     setPurchaseDate(new Date().toISOString().slice(0, 10));
+    setPurchasePrice("");
+    setPurchasePriceTouched(false);
+    setPurchasePriceAutoFilled(false);
+    setHistoricalMissing(false);
+    setCurrency("BRL");
     setNotes("");
   };
+
+  // Auto-fetch debounced do preço histórico: dispara quando temos ticker do
+  // catálogo + data de compra e o usuário ainda não digitou um preço manual.
+  // Se o endpoint não existir ou der 404, mostra hint cinza pra preenchimento
+  // manual — nunca quebra o formulário.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setHistoricalMissing(false);
+
+    if (!lockedFromCatalog || !ticker || !purchaseDate) return;
+    if (purchasePriceTouched) return;
+
+    const tickerSnap = ticker.trim().toUpperCase();
+    const typeSnap = effectiveAssetType;
+    const dateSnap = purchaseDate;
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          ticker: tickerSnap,
+          type: typeSnap,
+          date: dateSnap,
+        });
+        const res = await api.get<ApiResponse<HistoricalPriceResponse>>(
+          `/prices/historical?${params.toString()}`,
+        );
+        if (!res?.data) {
+          setHistoricalMissing(true);
+          return;
+        }
+        const n = Number(res.data.price);
+        if (!Number.isFinite(n)) {
+          setHistoricalMissing(true);
+          return;
+        }
+        // formata com 2 casas pra BRL/USD; cripto mantém precisão maior se vier.
+        const formatted = n.toLocaleString("en-US", {
+          useGrouping: false,
+          maximumFractionDigits: typeSnap === "crypto" ? 8 : 2,
+          minimumFractionDigits: 2,
+        });
+        setPurchasePrice(formatted);
+        setPurchasePriceAutoFilled(true);
+        const cur = (res.data.currency || "").toUpperCase();
+        if (cur === "USD" || cur === "BRL") {
+          setCurrency(cur);
+        }
+      } catch (err) {
+        // 404 ou endpoint não disponível — degrada em hint cinza.
+        const msg = err instanceof Error ? err.message.toLowerCase() : "";
+        if (msg.includes("not found") || msg.includes("404")) {
+          setHistoricalMissing(true);
+        }
+      }
+    }, 400);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [
+    lockedFromCatalog,
+    ticker,
+    purchaseDate,
+    purchasePriceTouched,
+    effectiveAssetType,
+  ]);
 
   const handleAddInvestment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,17 +251,25 @@ export default function PortfolioDetailPage({
         `/portfolios/${id}/investments`,
         {
           ticker: ticker.trim().toUpperCase(),
-          asset_type: assetType,
+          asset_type: effectiveAssetType,
           amount_invested: amountInvested,
           quantity: quantity || null,
           purchase_date: purchaseDate,
+          purchase_price: purchasePrice || null,
+          currency,
           notes: notes || null,
         },
       );
+      // backend ainda pode não devolver purchase_price/currency; preserva os
+      // valores que o usuário enviou pra que a tabela já renderize ganho/perda.
+      const merged: Investment = {
+        ...res.data,
+        purchase_price:
+          res.data.purchase_price ?? (purchasePrice || undefined),
+        currency: res.data.currency ?? currency,
+      };
       setPortfolio((prev) =>
-        prev
-          ? { ...prev, investments: [res.data, ...prev.investments] }
-          : prev,
+        prev ? { ...prev, investments: [merged, ...prev.investments] } : prev,
       );
       resetForm();
       toaster.create({
@@ -227,6 +348,19 @@ export default function PortfolioDetailPage({
     ? "linear-gradient(135deg, rgba(14,165,233,0.28) 0%, rgba(14,165,233,0.10) 50%, #1f2937 100%)"
     : "linear-gradient(135deg, rgba(168,85,247,0.28) 0%, rgba(168,85,247,0.10) 50%, #1f2937 100%)";
   const heroGlow = isReal ? "rgba(14,165,233,0.32)" : "rgba(168,85,247,0.32)";
+
+  // Cálculos derivados pro feedback live abaixo do formulário.
+  const qtyNum = Number(quantity);
+  const priceNum = Number(purchasePrice);
+  const amountNum = Number(amountInvested);
+  const validDerived =
+    Number.isFinite(qtyNum) && qtyNum > 0 && Number.isFinite(priceNum) && priceNum > 0
+      ? qtyNum * priceNum
+      : null;
+  const amountMismatch =
+    validDerived != null && Number.isFinite(amountNum) && amountNum > 0
+      ? Math.abs(validDerived - amountNum) / amountNum > 0.05
+      : false;
 
   return (
     <Stack gap="6">
@@ -395,33 +529,76 @@ export default function PortfolioDetailPage({
                   value={ticker}
                   onChange={(t, asset) => {
                     setTicker(t);
-                    // auto-fill asset_type when picking from dropdown,
-                    // unless the user already overrode it manually
-                    if (asset && !assetTypeTouched) {
+                    if (asset) {
+                      // travou no catálogo: tipo derivado + moeda inferida.
+                      setLockedFromCatalog(asset);
                       setAssetType(asset.asset_type);
+                      setCurrency(defaultCurrencyForAsset(asset));
+                      // muda de ativo => libera auto-fetch do histórico de novo.
+                      setPurchasePriceTouched(false);
+                      setPurchasePriceAutoFilled(false);
+                      setHistoricalMissing(false);
+                    } else {
+                      // texto livre sem match no catálogo: destrava o select.
+                      setLockedFromCatalog(null);
+                      setHistoricalMissing(false);
                     }
                   }}
-                  assetType={assetTypeTouched ? assetType : undefined}
+                  assetType={
+                    lockedFromCatalog ? lockedFromCatalog.asset_type : undefined
+                  }
                   placeholder="VALE3, AAPL, BTC..."
                 />
               </FieldRoot>
               <FieldRoot required>
                 <FieldLabel>Tipo de ativo</FieldLabel>
-                <NativeSelectRoot>
-                  <NativeSelectField
-                    value={assetType}
-                    onChange={(e) => {
-                      setAssetType(e.target.value as AssetType);
-                      setAssetTypeTouched(true);
-                    }}
+                {lockedFromCatalog ? (
+                  // Tipo travado: mostra Badge read-only + ícone de cadeado pra
+                  // explicar por que não é editável. Evita VALE3 + crypto.
+                  <Flex
+                    align="center"
+                    gap="2"
+                    h="40px"
+                    px="3"
+                    borderRadius="md"
+                    border="1px solid"
+                    borderColor="gray.700"
+                    bg="gray.900"
                   >
-                    {ASSET_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {ASSET_LABEL[t] ?? t}
-                      </option>
-                    ))}
-                  </NativeSelectField>
-                </NativeSelectRoot>
+                    <Badge
+                      colorPalette={
+                        lockedFromCatalog.asset_type === "stock"
+                          ? "blue"
+                          : lockedFromCatalog.asset_type === "crypto"
+                            ? "purple"
+                            : lockedFromCatalog.asset_type === "etf"
+                              ? "green"
+                              : "orange"
+                      }
+                      variant="subtle"
+                    >
+                      {ASSET_LABEL[lockedFromCatalog.asset_type] ??
+                        lockedFromCatalog.asset_type}
+                    </Badge>
+                    <Flex align="center" gap="1" color="gray.500" ml="auto">
+                      <LockIcon size={12} />
+                      <Text fontSize="xs">automático</Text>
+                    </Flex>
+                  </Flex>
+                ) : (
+                  <NativeSelectRoot>
+                    <NativeSelectField
+                      value={assetType}
+                      onChange={(e) => setAssetType(e.target.value as AssetType)}
+                    >
+                      {ASSET_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {ASSET_LABEL[t] ?? t}
+                        </option>
+                      ))}
+                    </NativeSelectField>
+                  </NativeSelectRoot>
+                )}
               </FieldRoot>
               <FieldRoot required>
                 <FieldLabel>Valor investido (R$)</FieldLabel>
@@ -441,12 +618,59 @@ export default function PortfolioDetailPage({
                   inputMode="decimal"
                 />
               </FieldRoot>
+              <FieldRoot>
+                <FieldLabel>Preço unitário na compra</FieldLabel>
+                <Input
+                  value={purchasePrice}
+                  onChange={(e) => {
+                    setPurchasePrice(e.target.value);
+                    setPurchasePriceTouched(true);
+                    setPurchasePriceAutoFilled(false);
+                  }}
+                  placeholder="ex: 65000.00"
+                  inputMode="decimal"
+                />
+                {purchasePriceAutoFilled && !purchasePriceTouched && (
+                  <Text fontSize="xs" color="brand.300" mt="1">
+                    auto-preenchido pelo CoinGecko/Alpha Vantage
+                  </Text>
+                )}
+                {historicalMissing && !purchasePriceAutoFilled && (
+                  <Text fontSize="xs" color="gray.500" mt="1">
+                    preço histórico não disponível — informe manualmente
+                  </Text>
+                )}
+              </FieldRoot>
+              <FieldRoot>
+                <FieldLabel>Moeda</FieldLabel>
+                <NativeSelectRoot>
+                  <NativeSelectField
+                    value={currency}
+                    onChange={(e) =>
+                      setCurrency(e.target.value as "BRL" | "USD")
+                    }
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </NativeSelectField>
+                </NativeSelectRoot>
+              </FieldRoot>
               <FieldRoot required>
                 <FieldLabel>Data de compra</FieldLabel>
                 <Input
                   type="date"
                   value={purchaseDate}
-                  onChange={(e) => setPurchaseDate(e.target.value)}
+                  onChange={(e) => {
+                    setPurchaseDate(e.target.value);
+                    // data mudou: libera nova busca de histórico.
+                    if (!purchasePriceTouched) {
+                      setPurchasePriceAutoFilled(false);
+                      setHistoricalMissing(false);
+                    }
+                  }}
                 />
               </FieldRoot>
               <FieldRoot>
@@ -459,6 +683,34 @@ export default function PortfolioDetailPage({
                 />
               </FieldRoot>
             </SimpleGrid>
+
+            {/* Feedback live do valor derivado — sanity check antes de enviar. */}
+            {validDerived != null && (
+              <Box mt="4" p="3" bg="gray.900" borderRadius="md">
+                <Text fontSize="xs" color="gray.400">
+                  Você estaria registrando:{" "}
+                  <Text as="span" color="white" fontWeight="semibold">
+                    {qtyNum.toLocaleString(undefined, {
+                      maximumFractionDigits: 8,
+                    })}
+                  </Text>{" "}
+                  ×{" "}
+                  <Text as="span" color="white" fontWeight="semibold">
+                    {formatMoney(priceNum, currency)}
+                  </Text>{" "}
+                  ={" "}
+                  <Text as="span" color="brand.300" fontWeight="bold">
+                    {formatMoney(validDerived, currency)}
+                  </Text>
+                </Text>
+                {amountMismatch && (
+                  <Text fontSize="xs" color="#fbbf24" mt="1">
+                    ⚠ valor investido difere de quantidade × preço em mais de 5%
+                  </Text>
+                )}
+              </Box>
+            )}
+
             <Button
               type="submit"
               colorPalette="blue"
@@ -513,8 +765,8 @@ export default function PortfolioDetailPage({
                 <Table.Row>
                   <Table.ColumnHeader>Ticker</Table.ColumnHeader>
                   <Table.ColumnHeader>Tipo</Table.ColumnHeader>
-                  <Table.ColumnHeader>Preço</Table.ColumnHeader>
-                  <Table.ColumnHeader>Valor (R$)</Table.ColumnHeader>
+                  <Table.ColumnHeader>Posição / P&L</Table.ColumnHeader>
+                  <Table.ColumnHeader>Valor investido</Table.ColumnHeader>
                   <Table.ColumnHeader>Quantidade</Table.ColumnHeader>
                   <Table.ColumnHeader>Compra</Table.ColumnHeader>
                   <Table.ColumnHeader>Notas</Table.ColumnHeader>
@@ -541,9 +793,13 @@ export default function PortfolioDetailPage({
                       </Text>
                     </Table.Cell>
                     <Table.Cell>
-                      <PriceBadge
+                      <PositionCell
                         ticker={inv.ticker}
                         assetType={inv.asset_type}
+                        quantity={inv.quantity}
+                        amountInvested={inv.amount_invested}
+                        purchasePrice={inv.purchase_price}
+                        currency={inv.currency}
                       />
                     </Table.Cell>
                     <Table.Cell color="gain" fontWeight="bold">
