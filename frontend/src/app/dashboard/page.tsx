@@ -93,6 +93,19 @@ export default function DashboardPage() {
     load();
   }, [load]);
 
+  // IMPORTANTE: hooks (useState, useEffect, useCallback, usePriceMap, ...) precisam
+  // ser chamados na MESMA ORDEM em todo render — Rules of Hooks. Por isso o
+  // usePriceMap fica AQUI, antes do early return de loading. Se ele estivesse
+  // depois do `if (loading) return`, o primeiro render (loading=true) chamaria
+  // 5 hooks e o segundo (loading=false) chamaria 6, e o React estoura com
+  // "Rendered more hooks than during the previous render".
+  const allInvestments = portfolios.flatMap((p) => p.investments);
+  const {
+    map: priceMap,
+    loading: pricesLoading,
+    error: pricesError,
+  } = usePriceMap(allInvestments);
+
   if (loading) {
     return (
       <Center h="60vh">
@@ -105,21 +118,11 @@ export default function DashboardPage() {
   const totalPortfolios = portfolios.length;
   const realCount = portfolios.filter((p) => p.type === "real").length;
   const simulatedCount = totalPortfolios - realCount;
-
-  const allInvestments = portfolios.flatMap((p) => p.investments);
   const totalHoldings = allInvestments.length;
   const totalInvested = allInvestments.reduce(
     (sum, inv) => sum + (Number(inv.amount_invested) || 0),
     0,
   );
-
-  // Cotações atuais em memória, indexadas por ticker+tipo. Falhas individuais
-  // só fazem o card cair pra "—" — nunca quebra a página.
-  const {
-    map: priceMap,
-    loading: pricesLoading,
-    error: pricesError,
-  } = usePriceMap(allInvestments);
 
   // Agrupa patrimônio atual e investido por moeda (BRL/USD). Só posições com
   // quantity definida contribuem pro patrimônio — sem quantidade não dá pra
