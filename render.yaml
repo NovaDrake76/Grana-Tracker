@@ -1,0 +1,54 @@
+# Render Blueprint — provisions Postgres + Go backend in one apply.
+# Apply via: https://dashboard.render.com/blueprints (point at this repo).
+#
+# Free-tier caveats to be aware of when defending this deploy:
+#   * web services sleep after ~15 min of inactivity; first request after a
+#     sleep cold-starts the container (~30s on this image).
+#   * the free Postgres instance expires 90 days after creation. Back up
+#     before the deadline or upgrade to a paid plan.
+#   * outbound IPs are shared, so Alpha Vantage / CoinGecko rate limits are
+#     pooled with other free-tier tenants.
+
+databases:
+  - name: grana-tracker-db
+    plan: free
+    databaseName: granatracker
+    user: granatracker
+    # Postgres 16 matches the docker-compose.yml used in local dev so the
+    # SQL migrations behave identically in both environments.
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: grana-tracker-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    healthCheckPath: /healthz
+    # /healthz is the live probe (no DB dependency) — Render uses it to decide
+    # when a deploy is healthy and to keep the instance up.
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: grana-tracker-db
+          property: connectionString
+      - key: JWT_SECRET
+        # Render generates a high-entropy random value; satisfies the
+        # >=32-byte check in cmd/server/main.go.
+        generateValue: true
+      - key: ALPHA_VANTAGE_API_KEY
+        # User-provided in the dashboard. Leaving it unset / placeholder is
+        # safe — the AlphaVantageSource short-circuits and pricing falls back
+        # to CoinGecko for crypto only.
+        sync: false
+      - key: COINGECKO_BASE_URL
+        value: https://api.coingecko.com/api/v3
+      - key: FRONTEND_URL
+        # Paste the Vercel URL after the frontend deploys; supports a
+        # comma-separated list so localhost:3000 can be kept for debugging,
+        # e.g. "https://grana-tracker.vercel.app,http://localhost:3000".
+        sync: false
+      # PORT is injected by Render automatically — main.go reads os.Getenv("PORT")
+      # and binds to it. Do NOT set it here.

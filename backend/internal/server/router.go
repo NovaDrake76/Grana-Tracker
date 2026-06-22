@@ -2,6 +2,7 @@ package server
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,21 @@ import (
 	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/pricing"
 )
+
+// parseAllowedOrigins splits FRONTEND_URL on commas and trims whitespace so the
+// same env var can carry both the Vercel production URL and the local dev
+// origin (e.g. "https://grana-tracker.vercel.app,http://localhost:3000").
+// Empty entries are dropped so trailing commas don't widen CORS to "".
+func parseAllowedOrigins(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
 
 // NewRouter wires every route and middleware in one place so main.go and
 // integration tests build the exact same HTTP surface. It also returns the
@@ -47,7 +63,7 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 	r.Use(chimw.Recoverer)
 	r.Use(middleware.SecurityHeaders)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{frontendURL},
+		AllowedOrigins:   parseAllowedOrigins(frontendURL),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,

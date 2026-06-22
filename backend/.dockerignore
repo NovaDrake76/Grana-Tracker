@@ -1,0 +1,17 @@
+# Keep secrets out of the image — Render injects env vars at runtime, the
+# baked-in .env from local dev must not ship to production.
+.env
+.env.*
+!.env.example
+
+# Editor / VCS noise
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+
+# Test caches & build artifacts — let `go build` regenerate inside the image.
+*.test
+*.out
+coverage.*
