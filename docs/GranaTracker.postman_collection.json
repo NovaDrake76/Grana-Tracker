@@ -171,6 +171,44 @@
             "description": "Troca um refresh_token válido (7d) por um novo par de tokens. Use quando o access expira (15 min)."
           },
           "response": []
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 204) {",
+                  "  pm.collectionVariables.set('accessToken', '');",
+                  "  pm.collectionVariables.set('refreshToken', '');",
+                  "  console.log('Logout OK — tokens limpos');",
+                  "} else {",
+                  "  console.log('Logout falhou:', pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
+            },
+            "description": "Revoga o refresh_token informado (204 No Content). Após isso o refresh já não pode trocar por novos tokens; o access continua válido até expirar (15 min)."
+          },
+          "response": []
         }
       ]
     },
@@ -314,6 +352,23 @@
             "description": "Deleta o portfólio. Por `ON DELETE CASCADE` no schema, todos os investimentos dele somem junto."
           },
           "response": []
+        },
+        {
+          "name": "Get portfolio history (US06)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/{{portfolioId}}/history?period=30d",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "{{portfolioId}}", "history"],
+              "query": [
+                { "key": "period", "value": "30d", "description": "Janela temporal: 7d, 30d, 90d, 1y, all" }
+              ]
+            },
+            "description": "**US06 — Histórico de valor do portfólio.**\n\nDevolve uma série temporal `[{date, value}]` com o valor total do portfólio em cada dia da janela, usando `price_history` para reconstruir os preços passados.\n\n`period` aceita: `7d`, `30d`, `90d`, `1y`, `all`."
+          },
+          "response": []
         }
       ]
     },
@@ -422,6 +477,142 @@
               "path": ["api", "investments", "{{investmentId}}"]
             },
             "description": "Deleta um investimento individual (sem afetar o portfólio)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Assets",
+      "item": [
+        {
+          "name": "Search assets",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/assets/search?q=bitcoin&type=crypto&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "assets", "search"],
+              "query": [
+                { "key": "q", "value": "bitcoin", "description": "Termo de busca (ticker ou nome)" },
+                { "key": "type", "value": "crypto", "description": "Opcional: stock, crypto, etf, index" },
+                { "key": "limit", "value": "20", "description": "Opcional, default 20" }
+              ]
+            },
+            "description": "Endpoint público de autocomplete para o formulário de adicionar investimento. Consulta as APIs externas (CoinGecko / Alpha Vantage) e devolve uma lista de candidatos `{ticker, name, type}`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Prices",
+      "item": [
+        {
+          "name": "Get current price",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/prices/BTC?type=crypto",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "prices", "BTC"],
+              "query": [
+                { "key": "type", "value": "crypto", "description": "stock, crypto, etf, index" }
+              ]
+            },
+            "description": "Devolve o preço atual de um ticker. Endpoint público — serve o `price_cache` (TTL 15 min) e refaz fetch externo se estiver stale."
+          },
+          "response": []
+        },
+        {
+          "name": "Get historical price",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/prices/historical?ticker=BTC&type=crypto&date=2026-06-01",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "prices", "historical"],
+              "query": [
+                { "key": "ticker", "value": "BTC" },
+                { "key": "type", "value": "crypto" },
+                { "key": "date", "value": "2026-06-01", "description": "YYYY-MM-DD" }
+              ]
+            },
+            "description": "Preço de um ticker em uma data específica, lido de `price_history`. Usado pela série temporal do dashboard e do portfólio."
+          },
+          "response": []
+        },
+        {
+          "name": "Force refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/prices/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "prices", "refresh"]
+            },
+            "description": "Força um refresh dos preços de todos os tickers em cache (rate-limited por usuário). Útil pra demo — normalmente o background worker já mantém o cache fresco a cada 15–30 min."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Currency",
+      "item": [
+        {
+          "name": "Get exchange rate (US09)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/currency/rate?from=USD&to=BRL",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "currency", "rate"],
+              "query": [
+                { "key": "from", "value": "USD" },
+                { "key": "to", "value": "BRL" }
+              ]
+            },
+            "description": "**US09 — Conversão de moeda.**\n\nDevolve a taxa de câmbio entre dois códigos ISO 4217 (`USD`, `BRL`, `EUR`, ...). O dashboard usa para reapresentar valores na `preferred_currency` do usuário."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "GraphQL",
+      "item": [
+        {
+          "name": "Query me (portfolios + investments)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ me { id email name portfolios { id name investments { id ticker current_price } } } }\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "graphql"]
+            },
+            "description": "Endpoint GraphQL (bônus C-Sprint 4). Resposta no formato padrão `{data, errors}`.\n\nO exemplo busca o usuário autenticado com seus portfólios e investimentos aninhados em um único request — substitui várias chamadas REST por uma só."
           },
           "response": []
         }

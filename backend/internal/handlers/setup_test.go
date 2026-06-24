@@ -84,7 +84,7 @@ func truncateAll(t *testing.T) {
 // constructor.
 func newTestRouter(t *testing.T) chi.Router {
 	t.Helper()
-	r, _, _ := server.NewRouter(testPool, testJWTSecret, "http://localhost:3000")
+	r, _, _ := server.NewRouter(testPool, testJWTSecret, "http://localhost:3000", nil)
 	return r
 }
 

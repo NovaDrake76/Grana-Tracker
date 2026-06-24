@@ -14,7 +14,7 @@ func TestHealthzAlwaysOK(t *testing.T) {
 	// /healthz should not depend on DB — skip the requireDB gate and
 	// construct a router against whatever pool we have (nil is fine,
 	// because /healthz never touches it).
-	r, _, _ := server.NewRouter(testPool, testJWTSecret, "http://localhost:3000")
+	r, _, _ := server.NewRouter(testPool, testJWTSecret, "http://localhost:3000", nil)
 
 	rr, _ := doRequest(t, r, http.MethodGet, "/healthz", "", nil)
 	if rr.Code != http.StatusOK {
@@ -40,7 +40,7 @@ func TestReadyzWhenDBUnreachable(t *testing.T) {
 	}
 	defer pool.Close()
 
-	r, _, _ := server.NewRouter(pool, testJWTSecret, "http://localhost:3000")
+	r, _, _ := server.NewRouter(pool, testJWTSecret, "http://localhost:3000", nil)
 
 	rr, _ := doRequest(t, r, http.MethodGet, "/readyz", "", nil)
 	if rr.Code != http.StatusServiceUnavailable {

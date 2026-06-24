@@ -40,7 +40,11 @@ func parseAllowedOrigins(raw string) []string {
 // configured pricing.Service and snapshots.Service so main.go can hold a
 // reference for the daily refresh / snapshot goroutine without recreating the
 // source adapters or the FX rate.
-func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *pricing.Service, *snapshots.Service) {
+//
+// openapiYAML is the raw bytes of docs/openapi.yaml read at boot; pass nil
+// (or an empty slice) when the file isn't available — the /docs and
+// /openapi.yaml routes will still mount but the spec endpoint returns 503.
+func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string, openapiYAML []byte) (chi.Router, *pricing.Service, *snapshots.Service) {
 	queries := sqlc.New(pool)
 
 	// Build pricing service with real upstream adapters. Env vars override
@@ -54,9 +58,9 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 		pricing.NewAlphaVantageSource(alphaBase, alphaKey),
 	)
 
-	// Snapshot service runs alongside the pricing cron so the US06 history
-	// chart can read a daily total per portfolio. USD positions are converted
-	// to BRL with a placeholder rate until US09 ships a live FX feed.
+	// Snapshot service runs alongside the pricing cron — US09 will replace the
+	// hard-coded USD->BRL rate with a live FX feed. For now this lets US06
+	// chart USD positions in BRL with a plausible (if static) conversion.
 	snapshotsSvc := snapshots.NewService(queries, "5.00")
 
 	// Currency service backs US09 (Moeda Preferida). It is HTTP-only with an
@@ -71,6 +75,7 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 	healthHandler := handlers.NewHealthHandler(pool)
 	assetHandler := handlers.NewAssetHandler(queries, pricingSvc)
 	currencyHandler := handlers.NewCurrencyHandler(currencySvc)
+	docsHandler := handlers.NewDocsHandler(openapiYAML)
 
 	// Build the GraphQL schema once at boot — it's stateless after construction,
 	// so every request just runs graphql.Do against the cached schema. A schema
@@ -95,6 +100,14 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 	// health probes sit outside /api and outside auth so orchestrators can reach them.
 	r.Get("/healthz", healthHandler.Live)
 	r.Get("/readyz", healthHandler.Ready)
+
+	// US13 — public OpenAPI spec + Swagger UI viewer. Both live at the root
+	// (NOT under /api) so the URLs match what's printed in the README and the
+	// pitch slides: http://<host>/docs and http://<host>/openapi.yaml. The
+	// handler overrides the global CSP locally so unpkg's Swagger assets can
+	// load without weakening the headers on /api/* routes.
+	r.Get("/docs", docsHandler.ServeSwaggerUI)
+	r.Get("/openapi.yaml", docsHandler.ServeOpenAPI)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {

@@ -59,7 +59,25 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
-	handler, pricingSvc, snapshotsSvc := server.NewRouter(pool, jwtSecret, frontendURL)
+	// US13 — load the OpenAPI spec once at boot so the /docs Swagger UI and
+	// /openapi.yaml routes can serve it from memory. Missing-file is a warning
+	// (the rest of the API is still useful), not fatal. OPENAPI_SPEC_PATH lets
+	// container builds point at the absolute path inside the image; otherwise
+	// we fall back to the repo-relative path that works in `go run` from the
+	// backend/ working dir.
+	openapiPath := os.Getenv("OPENAPI_SPEC_PATH")
+	if openapiPath == "" {
+		openapiPath = "../docs/openapi.yaml"
+	}
+	openapiYAML, err := os.ReadFile(openapiPath)
+	if err != nil {
+		log.Printf("WARN: could not read OpenAPI spec at %s: %v — /docs will return 503", openapiPath, err)
+		openapiYAML = nil
+	} else {
+		log.Printf("loaded OpenAPI spec (%d bytes) from %s", len(openapiYAML), openapiPath)
+	}
+
+	handler, pricingSvc, snapshotsSvc := server.NewRouter(pool, jwtSecret, frontendURL, openapiYAML)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%s", port),

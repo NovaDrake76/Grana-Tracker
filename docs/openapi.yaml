@@ -13,6 +13,9 @@ info:
 
     All successful responses are wrapped in a top-level `data` field.
     All error responses share the shape `{ "error": string, "code": string }`.
+
+    This spec is served by the API at `/openapi.yaml`, and the interactive
+    Swagger UI is hosted at `/docs`.
   contact:
     name: Grana Tracker
     url: https://github.com/NovaDrake76/grana-tracker
@@ -34,6 +37,14 @@ tags:
     description: CRUD over the authenticated user's portfolios (real or simulated).
   - name: Investments
     description: CRUD over investments inside an owned portfolio.
+  - name: Assets
+    description: Asset catalog search for ticker autocomplete (US04).
+  - name: Prices
+    description: Current and historical price quotes (US08). Refresh is protected.
+  - name: Currency
+    description: Foreign-exchange conversion rates (US09) used to render portfolio totals in the user's preferred currency.
+  - name: GraphQL
+    description: Single GraphQL endpoint exposing the same data as REST.
 
 paths:
   /healthz:
@@ -201,6 +212,29 @@ paths:
                 code: AUTH_ERROR
         '429':
           $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke a refresh token
+      description: Invalidates the supplied refresh token so it can no longer be used to rotate the session. The access token is short-lived (15 min) and is not tracked server-side, so clients should also discard it locally.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refresh_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '204':
+          description: Refresh token revoked. No response body.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -448,6 +482,44 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/portfolios/{id}/history:
+    parameters:
+      - $ref: '#/components/parameters/PortfolioId'
+    get:
+      tags: [Portfolios]
+      summary: Get the historical value of a portfolio (US06)
+      description: Returns a time series of the portfolio's total value over the requested window, denominated in the portfolio currency. Used by the dashboard performance chart.
+      parameters:
+        - name: period
+          in: query
+          required: false
+          description: Look-back window for the series.
+          schema:
+            type: string
+            enum: [7d, 30d, 90d]
+            default: 30d
+          example: 30d
+      responses:
+        '200':
+          description: Portfolio value time series.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PortfolioHistoryResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/investments/{id}:
     parameters:
       - $ref: '#/components/parameters/InvestmentId'
@@ -535,6 +607,270 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/assets/search:
+    get:
+      tags: [Assets]
+      summary: Search the asset catalog
+      description: Public ticker/name autocomplete (US04) over the local asset cache. Used by the "Add Investment" form before the user has committed to a ticker.
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Free-text fragment matched against ticker and name (case-insensitive).
+          schema:
+            type: string
+          example: PETR
+        - name: type
+          in: query
+          required: false
+          description: Optional asset class filter.
+          schema:
+            type: string
+            enum: [stock, crypto, etf, index]
+          example: stock
+        - name: limit
+          in: query
+          required: false
+          description: Maximum results to return (server caps at 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          example: 20
+      responses:
+        '200':
+          description: Matching assets (may be empty).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssetResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/prices/{ticker}:
+    get:
+      tags: [Prices]
+      summary: Get the latest cached price for a ticker
+      description: Returns the most recent cached quote for the ticker. Public so the landing dashboard can render quotes before login. The `stale` flag is true when the cached entry has aged past the freshness window.
+      security: []
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          description: Asset ticker (case sensitivity follows the upstream source).
+          schema:
+            type: string
+          example: PETR4
+        - name: type
+          in: query
+          required: true
+          description: Asset class — required because the same ticker may exist in multiple classes.
+          schema:
+            type: string
+            enum: [stock, crypto, etf, index]
+          example: stock
+      responses:
+        '200':
+          description: Latest cached price.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PriceResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Price not cached for this ticker.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: price not cached for this ticker
+                code: NOT_FOUND
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/prices/historical:
+    get:
+      tags: [Prices]
+      summary: Get a historical price for a ticker
+      description: Returns the price for a ticker on a specific date. Hits the cached source adapter — upstream rate-limits, unsupported asset classes, and far-back dates all surface as 404 NOT_FOUND so the front-end has a single error branch.
+      security: []
+      parameters:
+        - name: ticker
+          in: query
+          required: true
+          description: Asset ticker.
+          schema:
+            type: string
+          example: PETR4
+        - name: type
+          in: query
+          required: true
+          description: Asset class.
+          schema:
+            type: string
+            enum: [stock, crypto, etf, index]
+          example: stock
+        - name: date
+          in: query
+          required: true
+          description: Target date in ISO YYYY-MM-DD.
+          schema:
+            type: string
+            format: date
+          example: "2026-04-10"
+      responses:
+        '200':
+          description: Historical price for the requested date.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/HistoricalPriceResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Historical price not available (unsupported, missing, or upstream failure).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: historical price not available
+                code: NOT_FOUND
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/prices/refresh:
+    post:
+      tags: [Prices]
+      summary: Force a refresh of all cached prices
+      description: Authenticated — calling this burns upstream API quota, so anonymous users are not allowed to trigger it. Iterates the asset catalog, refetches each price, and reports counts.
+      responses:
+        '200':
+          description: Refresh complete.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PriceRefreshResponse'
+                  message:
+                    type: string
+                    example: refresh complete
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/currency/rate:
+    get:
+      tags: [Currency]
+      summary: Get a currency conversion rate (US09)
+      description: Returns the latest FX rate between two supported currencies. Used by the frontend to render portfolio totals in the user's preferred currency without storing converted values.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: Source currency.
+          schema:
+            type: string
+            enum: [BRL, USD]
+            default: USD
+          example: USD
+        - name: to
+          in: query
+          required: false
+          description: Target currency.
+          schema:
+            type: string
+            enum: [BRL, USD]
+            default: BRL
+          example: BRL
+      responses:
+        '200':
+          description: Latest conversion rate.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CurrencyRateResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/graphql:
+    post:
+      tags: [GraphQL]
+      summary: GraphQL endpoint
+      description: |
+        GraphQL endpoint exposing the same data as REST. See schema introspection
+        or `backend/internal/graphql/schema.go` for the full type definition.
+
+        Request body is the standard GraphQL POST shape (`query`, optional
+        `variables`, optional `operationName`). Responses follow the GraphQL
+        spec (`data` and/or `errors`) — note the `errors` array here is the
+        GraphQL error envelope and does NOT use the REST `{error, code}` shape.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  example: "{ me { id name email } }"
+                variables:
+                  type: object
+                  additionalProperties: true
+                operationName:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: GraphQL response. Per spec, application-level errors are returned with HTTP 200 inside the `errors` array.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+                    additionalProperties: true
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -854,6 +1190,169 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Investment'
+
+    AssetResponse:
+      type: object
+      required: [id, ticker, name, asset_type, currency, source]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Local asset catalog UUID.
+          example: 9a1c2e8f-3b4d-4e2a-bb01-5d7e8f9a0c11
+        ticker:
+          type: string
+          example: PETR4
+        name:
+          type: string
+          example: Petróleo Brasileiro S.A. - Petrobras
+        asset_type:
+          type: string
+          enum: [stock, crypto, etf, index]
+          example: stock
+        currency:
+          type: string
+          description: ISO 4217 currency code the upstream price is denominated in.
+          example: BRL
+        market:
+          type: string
+          nullable: true
+          description: Exchange or market venue (e.g. B3, NASDAQ). Null when the upstream source does not provide one.
+          example: B3
+        source:
+          type: string
+          description: Upstream price source identifier (e.g. brapi, coingecko, alphavantage).
+          example: brapi
+      example:
+        id: 9a1c2e8f-3b4d-4e2a-bb01-5d7e8f9a0c11
+        ticker: PETR4
+        name: Petróleo Brasileiro S.A. - Petrobras
+        asset_type: stock
+        currency: BRL
+        market: B3
+        source: brapi
+
+    PriceResponse:
+      type: object
+      required: [ticker, asset_type, price, currency, fetched_at, stale]
+      properties:
+        ticker:
+          type: string
+          example: PETR4
+        asset_type:
+          type: string
+          enum: [stock, crypto, etf, index]
+          example: stock
+        price:
+          type: string
+          description: Decimal string to preserve precision.
+          example: "37.42"
+        currency:
+          type: string
+          example: BRL
+        fetched_at:
+          type: string
+          format: date-time
+          description: RFC3339 timestamp of the upstream fetch that populated this entry.
+          example: "2026-06-23T13:05:00Z"
+        stale:
+          type: boolean
+          description: True when the cached entry has aged past the configured freshness window.
+          example: false
+
+    HistoricalPriceResponse:
+      type: object
+      required: [ticker, asset_type, price, currency, date]
+      properties:
+        ticker:
+          type: string
+          example: PETR4
+        asset_type:
+          type: string
+          enum: [stock, crypto, etf, index]
+          example: stock
+        price:
+          type: string
+          description: Decimal string to preserve precision.
+          example: "35.18"
+        currency:
+          type: string
+          example: BRL
+        date:
+          type: string
+          format: date
+          description: Date the price corresponds to (YYYY-MM-DD).
+          example: "2026-04-10"
+
+    PriceRefreshResponse:
+      type: object
+      required: [refreshed, errors]
+      properties:
+        refreshed:
+          type: integer
+          description: Number of assets whose cached price was successfully refreshed.
+          example: 42
+        errors:
+          type: integer
+          description: Number of assets whose refresh failed (upstream timeout, rate-limit, etc).
+          example: 1
+        duration_ms:
+          type: integer
+          description: Total wall-clock duration of the refresh batch, in milliseconds.
+          example: 1845
+
+    PortfolioHistoryPoint:
+      type: object
+      required: [date, value]
+      properties:
+        date:
+          type: string
+          format: date
+          description: Date (YYYY-MM-DD) the value snapshot corresponds to.
+          example: "2026-05-20"
+        value:
+          type: string
+          description: Decimal string representing the portfolio's total value on that date, in the response's `currency`.
+          example: "12450.37"
+
+    PortfolioHistoryResponse:
+      type: object
+      required: [portfolio_id, currency, points]
+      properties:
+        portfolio_id:
+          type: string
+          format: uuid
+          example: 4f9d2c0a-4d8e-4d22-9b8f-4a3e6e2c9b11
+        currency:
+          type: string
+          description: ISO 4217 currency code the series is denominated in.
+          example: BRL
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortfolioHistoryPoint'
+
+    CurrencyRateResponse:
+      type: object
+      required: [from, to, rate, fetched_at]
+      properties:
+        from:
+          type: string
+          description: Source ISO 4217 currency code.
+          example: USD
+        to:
+          type: string
+          description: Target ISO 4217 currency code.
+          example: BRL
+        rate:
+          type: string
+          description: Decimal string — multiply an amount in `from` by `rate` to get the amount in `to`.
+          example: "5.1234"
+        fetched_at:
+          type: string
+          format: date-time
+          description: RFC3339 timestamp of the upstream fetch that populated this rate.
+          example: "2026-06-23T13:05:00Z"
 
   responses:
     ValidationError:
