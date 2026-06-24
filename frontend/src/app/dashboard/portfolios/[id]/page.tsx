@@ -159,6 +159,7 @@ export default function PortfolioDetailPage({
   }, [id, router]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -184,6 +185,7 @@ export default function PortfolioDetailPage({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHistoricalMissing(false);
 
     if (!lockedFromCatalog || !ticker || !purchaseDate) return;

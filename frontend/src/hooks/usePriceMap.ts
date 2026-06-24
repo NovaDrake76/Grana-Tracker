@@ -36,6 +36,7 @@ export function usePriceMap(investments: Investment[]) {
   useEffect(() => {
     let cancelled = false;
     if (investments.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMap({});
       setLoading(false);
       setError(false);

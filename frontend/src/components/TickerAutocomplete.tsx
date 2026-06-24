@@ -59,6 +59,7 @@ export function TickerAutocomplete({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const q = value.trim();
     if (q.length < 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([]);
       setLoading(false);
       return;
