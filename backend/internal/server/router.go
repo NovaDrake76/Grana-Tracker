@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
+	"github.com/NovaDrake76/grana-tracker/backend/internal/currency"
 	gqlapi "github.com/NovaDrake76/grana-tracker/backend/internal/graphql"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/handlers"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
@@ -58,6 +59,10 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 	// to BRL with a placeholder rate until US09 ships a live FX feed.
 	snapshotsSvc := snapshots.NewService(queries, "5.00")
 
+	// Currency service backs US09 (Moeda Preferida). It is HTTP-only with an
+	// in-memory cache, so we instantiate it once and share it across requests.
+	currencySvc := currency.NewService()
+
 	authMiddleware := middleware.NewAuthMiddleware(jwtSecret)
 	authHandler := handlers.NewAuthHandler(queries, pool, jwtSecret)
 	userHandler := handlers.NewUserHandler(queries)
@@ -65,6 +70,7 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 	investmentHandler := handlers.NewInvestmentHandler(queries)
 	healthHandler := handlers.NewHealthHandler(pool)
 	assetHandler := handlers.NewAssetHandler(queries, pricingSvc)
+	currencyHandler := handlers.NewCurrencyHandler(currencySvc)
 
 	// Build the GraphQL schema once at boot — it's stateless after construction,
 	// so every request just runs graphql.Do against the cached schema. A schema
@@ -149,6 +155,10 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 
 			// Mutating the cache costs upstream API quota — keep it behind auth.
 			r.Post("/prices/refresh", assetHandler.Refresh)
+
+			// Currency conversion sits behind auth so abusers can't drain the
+			// free AwesomeAPI tier on our IP; rates are user-facing anyway.
+			r.Get("/currency/rate", currencyHandler.GetRate)
 
 			// Single GraphQL endpoint — same Authenticate middleware as REST so
 			// resolvers can trust middleware.GetUserID(ctx) is set.

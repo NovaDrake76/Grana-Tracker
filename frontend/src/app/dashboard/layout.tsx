@@ -32,10 +32,9 @@ const navItems: {
   { label: "Dashboard", href: "/dashboard", icon: <DashboardIcon /> },
   { label: "Portfolios", href: "/dashboard/portfolios", icon: <PortfolioIcon /> },
   {
-    label: "Settings",
+    label: "Configurações",
     href: "/dashboard/settings",
     icon: <SettingsIcon />,
-    disabled: true,
   },
 ];
 

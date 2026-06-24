@@ -18,6 +18,9 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
+  // US09 — Settings precisa refazer GET /user/me depois de salvar preferred_currency
+  // pra que o sidebar/dashboard reflitam o novo valor sem F5.
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -84,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         logout,
+        refreshUser: fetchUser,
       }}
     >
       {children}

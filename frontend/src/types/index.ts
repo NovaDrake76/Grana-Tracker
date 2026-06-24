@@ -81,6 +81,15 @@ export interface PortfolioHistoryResponse {
   points: PortfolioHistoryPoint[];
 }
 
+// US09 — resposta de GET /api/currency/rate?from=&to=.
+// `rate` é string (precisão decimal); `fetched_at` é RFC3339.
+export interface CurrencyRateResponse {
+  from: string;
+  to: string;
+  rate: string;
+  fetched_at: string;
+}
+
 export interface TokenPair {
   access_token: string;
   refresh_token: string;

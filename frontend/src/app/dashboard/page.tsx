@@ -18,6 +18,7 @@ import NextLink from "next/link";
 import { api } from "@/lib/api";
 import type {
   ApiResponse,
+  CurrencyRateResponse,
   Portfolio,
   PortfolioWithInvestments,
 } from "@/types";
@@ -62,10 +63,51 @@ function formatMoney(value: number, currency: string) {
   }
 }
 
+// US09 — converte um valor (`value` em moeda `from`) para `preferred` usando
+// `usdBrlRate` (USD/BRL). Mantemos o helper enxuto: se from==preferred, devolve
+// o valor sem multiplicar. Pra USD->BRL multiplica pela cotação; pra BRL->USD
+// divide. Outras moedas caem no fallback identidade (não suportado pelo backend).
+function convertCurrency(
+  value: number,
+  from: string,
+  preferred: string,
+  usdBrlRate: number,
+): number {
+  if (!Number.isFinite(value)) return value;
+  const f = (from || "BRL").toUpperCase();
+  const p = (preferred || "BRL").toUpperCase();
+  if (f === p) return value;
+  if (!Number.isFinite(usdBrlRate) || usdBrlRate <= 0) return value;
+  if (f === "USD" && p === "BRL") return value * usdBrlRate;
+  if (f === "BRL" && p === "USD") return value / usdBrlRate;
+  return value;
+}
+
+function formatPreferred(value: number, preferred: string) {
+  if (!Number.isFinite(value)) return "—";
+  const code = (preferred || "BRL").toUpperCase();
+  try {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${code} ${value.toLocaleString("pt-BR", {
+      maximumFractionDigits: 2,
+    })}`.trim();
+  }
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [portfolios, setPortfolios] = useState<PortfolioWithInvestments[]>([]);
+  // US09 — cotação USD->BRL pra converter posições USD na moeda preferida do
+  // usuário. Buscada uma vez no mount; se falhar (ex. AwesomeAPI fora), cai
+  // pro fallback 1 e os USDs ficam não-convertidos (helper retorna identidade).
+  const [usdBrlRate, setUsdBrlRate] = useState<number>(0);
+  const [rateFetchedAt, setRateFetchedAt] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -93,6 +135,31 @@ export default function DashboardPage() {
     load();
   }, [load]);
 
+  // Cotação USD/BRL — buscada em paralelo ao carregamento dos portfolios.
+  // Falha silenciosa: dashboard continua funcionando com 0 (helper devolve
+  // identidade nesse caso, então valores USD aparecem sem conversão).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<ApiResponse<CurrencyRateResponse>>(
+          "/currency/rate?from=USD&to=BRL",
+        );
+        if (cancelled) return;
+        const n = Number(res.data?.rate);
+        if (Number.isFinite(n) && n > 0) {
+          setUsdBrlRate(n);
+          setRateFetchedAt(res.data?.fetched_at ?? null);
+        }
+      } catch {
+        // silencioso: indicador "USD/BRL" só não vai aparecer.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // IMPORTANTE: hooks (useState, useEffect, useCallback, usePriceMap, ...) precisam
   // ser chamados na MESMA ORDEM em todo render — Rules of Hooks. Por isso o
   // usePriceMap fica AQUI, antes do early return de loading. Se ele estivesse
@@ -115,14 +182,24 @@ export default function DashboardPage() {
   }
 
   // Agregados
+  const preferred = (user?.preferred_currency || "BRL").toUpperCase();
   const totalPortfolios = portfolios.length;
   const realCount = portfolios.filter((p) => p.type === "real").length;
   const simulatedCount = totalPortfolios - realCount;
   const totalHoldings = allInvestments.length;
+  // total investido SOMADO em BRL (legado) — mantido pra exibir hero histórico.
   const totalInvested = allInvestments.reduce(
     (sum, inv) => sum + (Number(inv.amount_invested) || 0),
     0,
   );
+  // US09 — total investido CONVERTIDO pra moeda preferida do usuário, somando
+  // posições BRL e USD com a cotação atual. Quando preferred==BRL e a cotação
+  // estiver ok, equivale a somar BRL + (USD * rate). Quando preferred==USD,
+  // o BRL é dividido pelo rate. Posições sem moeda explícita assumem BRL.
+  const totalInvestedPreferred = allInvestments.reduce((sum, inv) => {
+    const v = Number(inv.amount_invested) || 0;
+    return sum + convertCurrency(v, inv.currency || "BRL", preferred, usdBrlRate);
+  }, 0);
 
   // Agrupa patrimônio atual e investido por moeda (BRL/USD). Só posições com
   // quantity definida contribuem pro patrimônio — sem quantidade não dá pra
@@ -229,8 +306,32 @@ export default function DashboardPage() {
               {greeting}, {firstName} 👋
             </Text>
             <Heading size="xl" color="white" lineHeight="1.1" mb="3">
-              {formatBRL(totalInvested)}
+              {formatPreferred(totalInvestedPreferred, preferred)}
             </Heading>
+            {/* US09 — indicador da cotação USD/BRL usada na conversão.
+                Só aparece se a cotação foi buscada com sucesso. */}
+            {usdBrlRate > 0 && (
+              <Text fontSize="xs" color="gray.400" mb="2">
+                USD/BRL:{" "}
+                <Text as="span" color="white" fontWeight="semibold">
+                  {usdBrlRate.toLocaleString("pt-BR", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 4,
+                  })}
+                </Text>
+                {rateFetchedAt && (
+                  <>
+                    {" "}
+                    (atualizado{" "}
+                    {new Date(rateFetchedAt).toLocaleTimeString("pt-BR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                    )
+                  </>
+                )}
+              </Text>
+            )}
             <Text color="gray.400" fontSize="sm" maxW="md">
               Capital total investido em {totalPortfolios} portfolio
               {totalPortfolios === 1 ? "" : "s"} ({realCount} real
