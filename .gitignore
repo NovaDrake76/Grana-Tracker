@@ -11,7 +11,6 @@ out/
 dist/
 tmp/
 *.log
-package-lock.json
 claude_code_dev_instructions.md
 progress.md
 AVALIACAO.md
