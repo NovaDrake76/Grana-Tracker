@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
+	gqlapi "github.com/NovaDrake76/grana-tracker/backend/internal/graphql"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/handlers"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/pricing"
@@ -57,6 +58,15 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 	investmentHandler := handlers.NewInvestmentHandler(queries)
 	healthHandler := handlers.NewHealthHandler(pool)
 	assetHandler := handlers.NewAssetHandler(queries, pricingSvc)
+
+	// Build the GraphQL schema once at boot — it's stateless after construction,
+	// so every request just runs graphql.Do against the cached schema. A schema
+	// build error is fatal because the rest of the surface is useless without it.
+	gqlSchema, err := gqlapi.NewSchema(queries)
+	if err != nil {
+		panic("failed to build graphql schema: " + err.Error())
+	}
+	graphqlHandler := gqlapi.NewHandler(gqlSchema)
 
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)
@@ -104,6 +114,11 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 		r.Group(func(r chi.Router) {
 			r.Use(authMiddleware.Authenticate)
 
+			// Logout lives behind Authenticate (NOT in the public /auth rate-
+			// limited group above) so the caller must prove they hold a valid
+			// access token before they can revoke a refresh token.
+			r.Post("/auth/logout", authHandler.Logout)
+
 			r.Route("/user", func(r chi.Router) {
 				r.Get("/me", userHandler.GetMe)
 				r.Put("/me", userHandler.UpdateMe)
@@ -126,6 +141,10 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 
 			// Mutating the cache costs upstream API quota — keep it behind auth.
 			r.Post("/prices/refresh", assetHandler.Refresh)
+
+			// Single GraphQL endpoint — same Authenticate middleware as REST so
+			// resolvers can trust middleware.GetUserID(ctx) is set.
+			r.Post("/graphql", graphqlHandler.ServeHTTP)
 		})
 	})
 

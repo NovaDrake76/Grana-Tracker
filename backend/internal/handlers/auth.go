@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
+	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/services"
 )
 
@@ -271,6 +272,70 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": newPair,
 	})
+}
+
+// Logout revokes the supplied refresh token for the authenticated user. It is
+// idempotent: an unknown or already-revoked token returns 204 No Content so a
+// client retrying logout does not see a spurious error. Cross-user logout
+// attempts (authenticated user A submitting user B's refresh token) are
+// rejected with 403 so a stolen access token cannot be used to invalidate
+// somebody else's session.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", "VALIDATION_ERROR")
+		return
+	}
+
+	if req.RefreshToken == "" {
+		writeError(w, http.StatusBadRequest, "refresh_token is required", "VALIDATION_ERROR")
+		return
+	}
+
+	if _, err := services.ValidateToken(req.RefreshToken, h.Secret); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid refresh token", "VALIDATION_ERROR")
+		return
+	}
+
+	hash := services.HashRefreshToken(req.RefreshToken)
+
+	row, err := h.Queries.GetRefreshTokenByHash(r.Context(), hash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Idempotent: token row already gone (e.g. rotated out or pruned).
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to look up refresh token", "INTERNAL_ERROR")
+		return
+	}
+
+	// Cross-user check: the authenticated principal must own the row they are
+	// trying to revoke. Use the middleware-derived user_id rather than the
+	// refresh token's claims so a forged-but-valid-sig token can't bypass.
+	authUserID := middleware.GetUserID(r.Context())
+	if authUserID == "" || uuidStr(row.UserID) != authUserID {
+		writeError(w, http.StatusForbidden, "forbidden", "FORBIDDEN")
+		return
+	}
+
+	// Already revoked — idempotent no-op.
+	if row.RevokedAt.Valid {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// ReplacedBy stays NULL (Valid: false) — this is a logout, not a rotation,
+	// so there is no successor token to point at.
+	if err := h.Queries.RevokeRefreshToken(r.Context(), sqlc.RevokeRefreshTokenParams{
+		ID:         row.ID,
+		ReplacedBy: pgtype.UUID{Valid: false},
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to revoke refresh token", "INTERNAL_ERROR")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // issueAndPersistTokenPair mints a fresh access/refresh pair for userID and
