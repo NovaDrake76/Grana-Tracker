@@ -16,6 +16,7 @@ import (
 	"github.com/NovaDrake76/grana-tracker/backend/internal/db"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/pricing"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/server"
+	"github.com/NovaDrake76/grana-tracker/backend/internal/snapshots"
 )
 
 func main() {
@@ -58,7 +59,7 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
-	handler, pricingSvc := server.NewRouter(pool, jwtSecret, frontendURL)
+	handler, pricingSvc, snapshotsSvc := server.NewRouter(pool, jwtSecret, frontendURL)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%s", port),
@@ -69,11 +70,11 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	// Best-effort warm-up + daily refresh of price_cache / price_history.
-	// We run this in a goroutine so a slow upstream cannot delay server boot,
-	// and we log (rather than fatal) on errors — stale prices are degraded but
-	// the rest of the app should keep serving.
-	go runPricingRefresh(pricingSvc)
+	// Best-effort warm-up + daily refresh of price_cache / price_history, and a
+	// matching daily snapshot of portfolio totals for US06. Both run in the
+	// same goroutine so the snapshot always sees the freshest prices, and
+	// neither is allowed to fatal — stale data is degraded, not down.
+	go runPricingRefresh(pricingSvc, snapshotsSvc)
 
 	go func() {
 		log.Printf("server starting on port %s", port)
@@ -96,15 +97,23 @@ func main() {
 }
 
 // runPricingRefresh kicks off one immediate refresh on boot and then a ticker
-// every 24h. Errors are logged, never fatal.
-func runPricingRefresh(svc *pricing.Service) {
+// every 24h. After each successful price refresh we also snapshot every
+// portfolio's total value so the US06 history chart has fresh data the next
+// morning. Errors on either step are logged, never fatal.
+func runPricingRefresh(svc *pricing.Service, snaps *snapshots.Service) {
 	summary, err := svc.RefreshAll(context.Background())
 	log.Printf("pricing initial refresh: %d updated, errors=%d, err=%v", summary.Refreshed, len(summary.Errors), err)
+	if errs := snaps.SnapshotAll(context.Background()); len(errs) > 0 {
+		log.Printf("snapshots initial run: %d portfolio errors (logged above)", len(errs))
+	}
 
 	t := time.NewTicker(24 * time.Hour)
 	defer t.Stop()
 	for range t.C {
 		s, err := svc.RefreshAll(context.Background())
 		log.Printf("pricing daily refresh: %d updated, errors=%d, err=%v", s.Refreshed, len(s.Errors), err)
+		if errs := snaps.SnapshotAll(context.Background()); len(errs) > 0 {
+			log.Printf("snapshots daily run: %d portfolio errors (logged above)", len(errs))
+		}
 	}
 }

@@ -27,8 +27,10 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error)
 	ListAllAssets(ctx context.Context) ([]Asset, error)
+	ListAllPortfolios(ctx context.Context) ([]Portfolio, error)
 	ListAssetsByType(ctx context.Context, assetType string) ([]Asset, error)
 	ListInvestmentsByPortfolio(ctx context.Context, portfolioID pgtype.UUID) ([]Investment, error)
+	ListPortfolioSnapshotsInPeriod(ctx context.Context, arg ListPortfolioSnapshotsInPeriodParams) ([]PortfolioSnapshot, error)
 	ListPortfoliosByUser(ctx context.Context, userID pgtype.UUID) ([]Portfolio, error)
 	RevokeAllUserRefreshTokens(ctx context.Context, userID pgtype.UUID) error
 	RevokeRefreshToken(ctx context.Context, arg RevokeRefreshTokenParams) error
@@ -39,6 +41,7 @@ type Querier interface {
 	UpdateInvestment(ctx context.Context, arg UpdateInvestmentParams) (Investment, error)
 	UpdatePortfolio(ctx context.Context, arg UpdatePortfolioParams) (Portfolio, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)
+	UpsertPortfolioSnapshot(ctx context.Context, arg UpsertPortfolioSnapshotParams) error
 	UpsertPrice(ctx context.Context, arg UpsertPriceParams) (PriceCache, error)
 }
 

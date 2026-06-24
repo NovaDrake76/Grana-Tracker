@@ -48,6 +48,7 @@ import {
 } from "@/components/Icons";
 import { TickerAutocomplete } from "@/components/TickerAutocomplete";
 import { PositionCell } from "@/components/PositionCell";
+import { PerformanceChart } from "@/components/PerformanceChart";
 
 const ASSET_TYPES: AssetType[] = ["stock", "crypto", "etf", "index"];
 const CURRENCIES: ("BRL" | "USD")[] = ["BRL", "USD"];
@@ -723,6 +724,9 @@ export default function PortfolioDetailPage({
           </form>
         </Box>
       </Box>
+
+      {/* US06 — Histórico patrimonial (acima da tabela de investimentos) */}
+      <PerformanceChart portfolioId={portfolio.id} />
 
       {/* Investments table */}
       <Box

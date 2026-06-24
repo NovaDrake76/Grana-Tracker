@@ -45,6 +45,15 @@ type Portfolio struct {
 	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 }
 
+type PortfolioSnapshot struct {
+	ID           pgtype.UUID        `json:"id"`
+	PortfolioID  pgtype.UUID        `json:"portfolio_id"`
+	SnapshotDate pgtype.Date        `json:"snapshot_date"`
+	TotalValue   pgtype.Numeric     `json:"total_value"`
+	Currency     string             `json:"currency"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 type PriceCache struct {
 	ID        int32            `json:"id"`
 	Ticker    string           `json:"ticker"`

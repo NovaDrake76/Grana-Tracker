@@ -2,22 +2,37 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/NovaDrake76/grana-tracker/backend/db/sqlc"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
+	"github.com/NovaDrake76/grana-tracker/backend/internal/snapshots"
 )
 
 type PortfolioHandler struct {
-	Queries *sqlc.Queries
+	Queries   *sqlc.Queries
+	Snapshots *snapshots.Service
 }
 
+// NewPortfolioHandler keeps the existing signature for tests that build the
+// handler without a snapshot service. Use SetSnapshots to attach the cron
+// component after construction (or pass it via NewPortfolioHandlerWithSnapshots
+// from server wiring).
 func NewPortfolioHandler(queries *sqlc.Queries) *PortfolioHandler {
 	return &PortfolioHandler{Queries: queries}
+}
+
+// NewPortfolioHandlerWithSnapshots is what server.NewRouter calls so the
+// GetHistory endpoint can lazily trigger a snapshot when the chart is empty.
+func NewPortfolioHandlerWithSnapshots(queries *sqlc.Queries, snaps *snapshots.Service) *PortfolioHandler {
+	return &PortfolioHandler{Queries: queries, Snapshots: snaps}
 }
 
 type portfolioResponse struct {
@@ -272,5 +287,125 @@ func (h *PortfolioHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "portfolio deleted successfully",
+	})
+}
+
+// historyPoint is one (date, value) pair returned in the chart payload.
+type historyPoint struct {
+	Date  string `json:"date"`
+	Value string `json:"value"`
+}
+
+// historyResponse is the envelope under {"data": ...} for GetHistory.
+type historyResponse struct {
+	PortfolioID string         `json:"portfolio_id"`
+	Currency    string         `json:"currency"`
+	Period      string         `json:"period"`
+	Points      []historyPoint `json:"points"`
+}
+
+// historyPeriodDays maps the period query string to a window length in days.
+// Keeping it as a small enum guards against accidentally letting a caller
+// request "5y" and torching the database with a giant scan.
+var historyPeriodDays = map[string]int{
+	"7d":  7,
+	"30d": 30,
+	"90d": 90,
+}
+
+// returns the daily total_value series for a portfolio over the requested
+// window (default 30d). When the snapshot table is empty AND the portfolio has
+// at least one investment, we trigger an on-demand snapshot so the chart is
+// never blank in the demo — the daily cron normally keeps it warm.
+// route: GET /api/portfolios/{id}/history?period=30d
+func (h *PortfolioHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	portfolioID := chi.URLParam(r, "id")
+
+	pid, err := uuid.Parse(portfolioID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid portfolio id", "VALIDATION_ERROR")
+		return
+	}
+
+	// ownership check — same pattern as Get.
+	p, err := h.Queries.GetPortfolioByID(r.Context(), pgUUID(pid))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "portfolio not found", "NOT_FOUND")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load portfolio", "INTERNAL_ERROR")
+		return
+	}
+	if uuidStr(p.UserID) != userID {
+		writeError(w, http.StatusForbidden, "access denied", "FORBIDDEN")
+		return
+	}
+
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "30d"
+	}
+	days, ok := historyPeriodDays[period]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "period must be one of 7d, 30d, 90d", "VALIDATION_ERROR")
+		return
+	}
+
+	// UTC date math keeps the cutoff consistent with the snapshot writer,
+	// which also truncates to UTC midnight.
+	fromDate := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -days)
+
+	rows, err := h.Queries.ListPortfolioSnapshotsInPeriod(r.Context(), sqlc.ListPortfolioSnapshotsInPeriodParams{
+		PortfolioID:  pgUUID(pid),
+		SnapshotDate: pgtype.Date{Time: fromDate, Valid: true},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load history", "INTERNAL_ERROR")
+		return
+	}
+
+	// Lazy snapshot: if the chart is empty but the portfolio has investments,
+	// run a one-off snapshot so the demo (and freshly-onboarded users) see at
+	// least one data point. Errors are logged, not returned — better to serve
+	// an empty chart than a 500 in this edge case.
+	if len(rows) == 0 && h.Snapshots != nil {
+		invs, ierr := h.Queries.ListInvestmentsByPortfolio(r.Context(), pgUUID(pid))
+		if ierr == nil && len(invs) > 0 {
+			if serr := h.Snapshots.SnapshotPortfolio(r.Context(), pid); serr != nil {
+				log.Printf("history: lazy snapshot for %s failed: %v", pid, serr)
+			} else {
+				rows, err = h.Queries.ListPortfolioSnapshotsInPeriod(r.Context(), sqlc.ListPortfolioSnapshotsInPeriodParams{
+					PortfolioID:  pgUUID(pid),
+					SnapshotDate: pgtype.Date{Time: fromDate, Valid: true},
+				})
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, "failed to load history", "INTERNAL_ERROR")
+					return
+				}
+			}
+		}
+	}
+
+	points := make([]historyPoint, 0, len(rows))
+	currency := "BRL"
+	for _, row := range rows {
+		points = append(points, historyPoint{
+			Date:  dateStr(row.SnapshotDate),
+			Value: numericStr(row.TotalValue),
+		})
+		if row.Currency != "" {
+			currency = row.Currency
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": historyResponse{
+			PortfolioID: uuidStr(p.ID),
+			Currency:    currency,
+			Period:      period,
+			Points:      points,
+		},
 	})
 }

@@ -23,3 +23,8 @@ RETURNING id, user_id, name, type, description, created_at, updated_at;
 -- name: DeletePortfolio :exec
 DELETE FROM portfolios
 WHERE id = $1;
+
+-- name: ListAllPortfolios :many
+SELECT id, user_id, name, type, description, created_at, updated_at
+FROM portfolios
+ORDER BY created_at ASC;

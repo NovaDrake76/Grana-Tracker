@@ -67,6 +67,20 @@ export interface PortfolioWithInvestments extends Portfolio {
   investments: Investment[];
 }
 
+// US06 — pontos da série temporal devolvida por GET /api/portfolios/{id}/history.
+// O backend devolve `value` como string pra preservar precisão decimal; o
+// componente coage com Number() apenas na hora de renderizar (tooltip/eixo).
+export interface PortfolioHistoryPoint {
+  date: string;
+  value: string;
+}
+
+export interface PortfolioHistoryResponse {
+  portfolio_id: string;
+  currency: string;
+  points: PortfolioHistoryPoint[];
+}
+
 export interface TokenPair {
   access_token: string;
   refresh_token: string;

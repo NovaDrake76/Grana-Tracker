@@ -16,6 +16,7 @@ import (
 	"github.com/NovaDrake76/grana-tracker/backend/internal/handlers"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/middleware"
 	"github.com/NovaDrake76/grana-tracker/backend/internal/pricing"
+	"github.com/NovaDrake76/grana-tracker/backend/internal/snapshots"
 )
 
 // parseAllowedOrigins splits FRONTEND_URL on commas and trims whitespace so the
@@ -35,9 +36,10 @@ func parseAllowedOrigins(raw string) []string {
 
 // NewRouter wires every route and middleware in one place so main.go and
 // integration tests build the exact same HTTP surface. It also returns the
-// configured pricing.Service so main.go can hold a reference for the daily
-// refresh goroutine without recreating the source adapters.
-func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *pricing.Service) {
+// configured pricing.Service and snapshots.Service so main.go can hold a
+// reference for the daily refresh / snapshot goroutine without recreating the
+// source adapters or the FX rate.
+func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *pricing.Service, *snapshots.Service) {
 	queries := sqlc.New(pool)
 
 	// Build pricing service with real upstream adapters. Env vars override
@@ -51,10 +53,15 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 		pricing.NewAlphaVantageSource(alphaBase, alphaKey),
 	)
 
+	// Snapshot service runs alongside the pricing cron so the US06 history
+	// chart can read a daily total per portfolio. USD positions are converted
+	// to BRL with a placeholder rate until US09 ships a live FX feed.
+	snapshotsSvc := snapshots.NewService(queries, "5.00")
+
 	authMiddleware := middleware.NewAuthMiddleware(jwtSecret)
 	authHandler := handlers.NewAuthHandler(queries, pool, jwtSecret)
 	userHandler := handlers.NewUserHandler(queries)
-	portfolioHandler := handlers.NewPortfolioHandler(queries)
+	portfolioHandler := handlers.NewPortfolioHandlerWithSnapshots(queries, snapshotsSvc)
 	investmentHandler := handlers.NewInvestmentHandler(queries)
 	healthHandler := handlers.NewHealthHandler(pool)
 	assetHandler := handlers.NewAssetHandler(queries, pricingSvc)
@@ -130,6 +137,7 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 				r.Get("/{id}", portfolioHandler.Get)
 				r.Put("/{id}", portfolioHandler.Update)
 				r.Delete("/{id}", portfolioHandler.Delete)
+				r.Get("/{id}/history", portfolioHandler.GetHistory)
 				r.Post("/{id}/investments", investmentHandler.Create)
 			})
 
@@ -148,5 +156,5 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret, frontendURL string) (chi.Router, *
 		})
 	})
 
-	return r, pricingSvc
+	return r, pricingSvc, snapshotsSvc
 }

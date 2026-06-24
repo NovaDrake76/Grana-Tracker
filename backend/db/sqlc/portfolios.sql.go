@@ -75,6 +75,40 @@ func (q *Queries) GetPortfolioByID(ctx context.Context, id pgtype.UUID) (Portfol
 	return i, err
 }
 
+const listAllPortfolios = `-- name: ListAllPortfolios :many
+SELECT id, user_id, name, type, description, created_at, updated_at
+FROM portfolios
+ORDER BY created_at ASC
+`
+
+func (q *Queries) ListAllPortfolios(ctx context.Context) ([]Portfolio, error) {
+	rows, err := q.db.Query(ctx, listAllPortfolios)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Portfolio
+	for rows.Next() {
+		var i Portfolio
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.Type,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPortfoliosByUser = `-- name: ListPortfoliosByUser :many
 SELECT id, user_id, name, type, description, created_at, updated_at
 FROM portfolios
