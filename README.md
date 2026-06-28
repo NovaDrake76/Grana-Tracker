@@ -183,6 +183,6 @@ Controles aplicados no backend (cobrindo OWASP A02/A03/A05/A07):
 
 DIM0547 — Desenvolvimento de Sistemas Web II:
 
-- Breno Jalmir
+- Breno Jalmir de Medeiros Almeida
 - Heittor Vinicius
 - Nathan Araujo
