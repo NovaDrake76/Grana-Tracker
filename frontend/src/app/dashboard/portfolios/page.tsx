@@ -14,6 +14,8 @@ import {
   Center,
   HStack,
   Stack,
+  NativeSelectField,
+  NativeSelectRoot,
 } from "@chakra-ui/react";
 import NextLink from "next/link";
 import { api } from "@/lib/api";
@@ -30,8 +32,16 @@ import {
   PlusIcon,
   TrashIcon,
 } from "@/components/Icons";
+import { usePriceMap, priceKey } from "@/hooks/usePriceMap";
 
 type Filter = "all" | "real" | "simulated";
+type SortKey =
+  | "recent"
+  | "oldest"
+  | "balance_desc"
+  | "balance_asc"
+  | "gain_desc"
+  | "name";
 
 function formatBRL(value: number) {
   return value.toLocaleString("pt-BR", {
@@ -76,6 +86,7 @@ export default function PortfoliosPage() {
   const [portfolios, setPortfolios] = useState<PortfolioWithInvestments[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
+  const [sortBy, setSortBy] = useState<SortKey>("recent");
   const router = useRouter();
 
   const fetchPortfolios = useCallback(async () => {
@@ -131,6 +142,12 @@ export default function PortfoliosPage() {
     }
   };
 
+  // IMPORTANTE: hooks (useState, useEffect, useCallback, usePriceMap, ...) precisam
+  // ser chamados na MESMA ORDEM em todo render — Rules of Hooks. Por isso o
+  // usePriceMap fica AQUI, antes do early return de loading.
+  const allInvestments = portfolios.flatMap((p) => p.investments);
+  const { map: priceMap } = usePriceMap(allInvestments);
+
   if (loading) {
     return (
       <Center h="50vh">
@@ -145,8 +162,72 @@ export default function PortfoliosPage() {
     simulated: portfolios.filter((p) => p.type === "simulated").length,
   };
 
-  const visible =
+  // Calcula rentabilidade por portfólio uma vez só, pra reaproveitar tanto no
+  // sort quanto no render do card.
+  type PortfolioMetrics = {
+    totalInvested: number;
+    currentValue: number;
+    gainLoss: number;
+    gainPct: number;
+    hasPrices: boolean;
+  };
+  const metricsById = new Map<string, PortfolioMetrics>();
+  for (const p of portfolios) {
+    let totalInvested = 0;
+    let currentValue = 0;
+    let hasPrices = false;
+    for (const inv of p.investments) {
+      const amount = Number(inv.amount_invested) || 0;
+      totalInvested += amount;
+      const quote = priceMap[priceKey(inv.ticker, inv.asset_type)];
+      const qty = inv.quantity == null ? null : Number(inv.quantity);
+      if (quote && qty != null && Number.isFinite(qty)) {
+        currentValue += qty * quote.price;
+        hasPrices = true;
+      } else {
+        currentValue += amount;
+      }
+    }
+    const gainLoss = currentValue - totalInvested;
+    const gainPct = totalInvested > 0 ? (gainLoss / totalInvested) * 100 : 0;
+    metricsById.set(p.id, {
+      totalInvested,
+      currentValue,
+      gainLoss,
+      gainPct,
+      hasPrices,
+    });
+  }
+
+  const anyHasPrices = Array.from(metricsById.values()).some((m) => m.hasPrices);
+
+  const filtered =
     filter === "all" ? portfolios : portfolios.filter((p) => p.type === filter);
+
+  const visible = [...filtered].sort((a, b) => {
+    const ma = metricsById.get(a.id)!;
+    const mb = metricsById.get(b.id)!;
+    switch (sortBy) {
+      case "recent":
+        return (
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+      case "oldest":
+        return (
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      case "balance_desc":
+        return mb.totalInvested - ma.totalInvested;
+      case "balance_asc":
+        return ma.totalInvested - mb.totalInvested;
+      case "gain_desc":
+        return mb.gainLoss - ma.gainLoss;
+      case "name":
+        return a.name.localeCompare(b.name, "pt-BR");
+      default:
+        return 0;
+    }
+  });
 
   const tabs: { id: Filter; label: string }[] = [
     { id: "all", label: "Todos" },
@@ -173,45 +254,78 @@ export default function PortfoliosPage() {
         </NextLink>
       </Flex>
 
-      {/* Filter tabs */}
+      {/* Filter tabs + sort dropdown */}
       {portfolios.length > 0 && (
-        <HStack
-          gap="1"
-          bg="gray.800"
-          border="1px solid"
-          borderColor="gray.700"
-          borderRadius="lg"
-          p="1"
-          w="fit-content"
+        <Flex
+          justify="space-between"
+          align="center"
+          wrap="wrap"
+          gap="3"
         >
-          {tabs.map((t) => {
-            const active = filter === t.id;
-            return (
-              <Button
-                key={t.id}
-                size="sm"
-                variant={active ? "solid" : "ghost"}
-                colorPalette={active ? "blue" : "gray"}
-                onClick={() => setFilter(t.id)}
-                px="4"
-              >
-                <Text>{t.label}</Text>
-                <Box
-                  ml="2"
-                  px="2"
-                  py="0.5"
-                  fontSize="xs"
-                  fontWeight="bold"
-                  bg={active ? "rgba(255,255,255,0.18)" : "gray.700"}
-                  color={active ? "white" : "gray.400"}
-                  borderRadius="full"
+          <HStack
+            gap="1"
+            bg="gray.800"
+            border="1px solid"
+            borderColor="gray.700"
+            borderRadius="lg"
+            p="1"
+            w="fit-content"
+          >
+            {tabs.map((t) => {
+              const active = filter === t.id;
+              return (
+                <Button
+                  key={t.id}
+                  size="sm"
+                  variant={active ? "solid" : "ghost"}
+                  colorPalette={active ? "blue" : "gray"}
+                  onClick={() => setFilter(t.id)}
+                  px="4"
                 >
-                  {counts[t.id]}
-                </Box>
-              </Button>
-            );
-          })}
-        </HStack>
+                  <Text>{t.label}</Text>
+                  <Box
+                    ml="2"
+                    px="2"
+                    py="0.5"
+                    fontSize="xs"
+                    fontWeight="bold"
+                    bg={active ? "rgba(255,255,255,0.18)" : "gray.700"}
+                    color={active ? "white" : "gray.400"}
+                    borderRadius="full"
+                  >
+                    {counts[t.id]}
+                  </Box>
+                </Button>
+              );
+            })}
+          </HStack>
+
+          <HStack gap="2">
+            <Text fontSize="sm" color="gray.400">
+              Ordenar:
+            </Text>
+            <NativeSelectRoot size="sm" w="200px">
+              <NativeSelectField
+                cursor="pointer"
+                bg="gray.800"
+                border="1px solid"
+                borderColor="gray.700"
+                color="white"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortKey)}
+              >
+                <option value="recent">Mais recentes</option>
+                <option value="oldest">Mais antigos</option>
+                <option value="balance_desc">Maior saldo</option>
+                <option value="balance_asc">Menor saldo</option>
+                <option value="gain_desc" disabled={!anyHasPrices}>
+                  Maior ganho
+                </option>
+                <option value="name">Nome (A-Z)</option>
+              </NativeSelectField>
+            </NativeSelectRoot>
+          </HStack>
+        </Flex>
       )}
 
       {visible.length === 0 ? (
@@ -243,10 +357,9 @@ export default function PortfoliosPage() {
       ) : (
         <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap="4">
           {visible.map((portfolio) => {
-            const totalInvested = portfolio.investments.reduce(
-              (s, i) => s + (Number(i.amount_invested) || 0),
-              0,
-            );
+            const metrics = metricsById.get(portfolio.id)!;
+            const { totalInvested, currentValue, gainLoss, gainPct, hasPrices } =
+              metrics;
             const allocByType = portfolio.investments.reduce<
               Record<string, number>
             >((acc, i) => {
@@ -257,6 +370,12 @@ export default function PortfoliosPage() {
             const allocList = Object.entries(allocByType)
               .map(([asset_type, value]) => ({ asset_type, value }))
               .sort((a, b) => b.value - a.value);
+            const ganhoColor =
+              gainLoss > 0.005
+                ? "gain"
+                : gainLoss < -0.005
+                  ? "loss"
+                  : "gray";
 
             return (
               <Box
@@ -286,9 +405,34 @@ export default function PortfoliosPage() {
                   <Text fontSize="xs" color="gray.500" mb="1">
                     Valor investido
                   </Text>
-                  <Heading size="md" color="white" mb="4">
+                  <Heading size="md" color="white" mb="3">
                     {formatBRL(totalInvested)}
                   </Heading>
+
+                  {/* Rentabilidade — valor de mercado atual + ganho/perda */}
+                  {!hasPrices ? (
+                    <Text fontSize="xs" color="gray.500" mb="4">
+                      preço indisponível
+                    </Text>
+                  ) : (
+                    <Box mb="4">
+                      <Text fontSize="xs" color="gray.500" mb="0.5">
+                        Valor atual
+                      </Text>
+                      <Text fontSize="sm" color="white" fontWeight="semibold">
+                        {formatBRL(currentValue)}
+                      </Text>
+                      <Text fontSize="xs" color={ganhoColor} fontWeight="bold">
+                        {gainLoss >= 0 ? "+" : ""}
+                        {formatBRL(gainLoss)} ({gainLoss >= 0 ? "+" : ""}
+                        {gainPct.toLocaleString("pt-BR", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                        %)
+                      </Text>
+                    </Box>
+                  )}
 
                   {/* Allocation bar + legend */}
                   {allocList.length > 0 && (

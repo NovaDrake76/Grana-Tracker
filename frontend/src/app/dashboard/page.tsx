@@ -231,11 +231,19 @@ export default function DashboardPage() {
         ? "loss"
         : "gray";
 
-  // Alocação por classe de ativo (em valor investido)
+  // RF24 — Alocação por classe de ativo usando VALOR ATUAL DE MERCADO
+  // (qty * cotação) em vez do valor investido histórico. Posições sem cotação
+  // disponível caem no fallback do amount_invested pra não sumirem do donut
+  // (preferimos mostrar valor histórico do que excluir a classe inteira).
   const allocByType = allInvestments.reduce<Record<string, number>>(
     (acc, inv) => {
-      acc[inv.asset_type] =
-        (acc[inv.asset_type] ?? 0) + (Number(inv.amount_invested) || 0);
+      const qty = Number(inv.quantity);
+      const quote = priceMap[priceKey(inv.ticker, inv.asset_type)];
+      const marketValue =
+        quote && Number.isFinite(qty)
+          ? qty * quote.price
+          : Number(inv.amount_invested) || 0;
+      acc[inv.asset_type] = (acc[inv.asset_type] ?? 0) + marketValue;
       return acc;
     },
     {},
@@ -243,6 +251,7 @@ export default function DashboardPage() {
   const allocSlices: AllocationSlice[] = Object.entries(allocByType)
     .map(([asset_type, value]) => ({ asset_type, value }))
     .sort((a, b) => b.value - a.value);
+  const totalMarketValue = allocSlices.reduce((s, x) => s + x.value, 0);
 
   // Barras: total investido por portfolio
   const portfolioBars: PortfolioBar[] = portfolios
@@ -444,11 +453,14 @@ export default function DashboardPage() {
                 Alocação por classe
               </Heading>
               <Text fontSize="xs" color="gray.500" mt="1">
-                Distribuição do total investido
+                Distribuição por valor atual de mercado
+              </Text>
+              <Text fontSize="xs" color="gray.500" mt="0.5">
+                valores históricos quando não houver cotação disponível
               </Text>
             </Box>
           </Flex>
-          <AllocationDonut data={allocSlices} total={totalInvested} />
+          <AllocationDonut data={allocSlices} total={totalMarketValue} />
           {allocSlices.length > 0 && (
             <Box mt="4" pt="4" borderTop="1px solid" borderColor="gray.700">
               <AllocationLegend data={allocSlices} />
